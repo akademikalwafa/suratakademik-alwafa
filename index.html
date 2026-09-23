@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0D1B33">
+<meta name="description" content="SIAKAD Surat STIS Al Wafa — layanan persuratan akademik mahasiswa: surat aktif kuliah, magang/PKL, izin penelitian, seminar proposal, sidang skripsi, administrasi kelulusan, dan perbaikan nilai.">
+<title>SIAKAD Surat — STIS Al Wafa</title>
+
+<!-- Bangun koneksi ke server sedini mungkin: menghemat DNS + TLS handshake
+     (±200–500 ms di jaringan seluler) sebelum permintaan pertama dikirim. -->
+<link rel="preconnect" href="https://script.google.com" crossorigin>
+<link rel="dns-prefetch" href="https://script.googleusercontent.com">
+<link rel="preconnect" href="https://drive.google.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+<link rel="stylesheet" href="assets/css/style.css">
+<!-- Font dimuat non-blocking agar teks tampil seketika memakai font sistem. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"></noscript>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23D9480F'/%3E%3Cpath d='M11 9h7l3 3v11a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1z' fill='none' stroke='white' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M18 9v3h3' fill='none' stroke='white' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<!-- ======================================================= LAYAR PEMUATAN -->
+<div id="boot">
+  <div style="text-align:center">
+    <div style="width:52px;height:52px;border-radius:15px;margin:0 auto 16px;background:linear-gradient(140deg,#E8590C,#B4400A);display:grid;place-items:center;box-shadow:0 6px 18px rgba(217,72,15,.3)">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
+    </div>
+    <div style="font-weight:800;font-size:16px;letter-spacing:-.02em">SIAKAD Surat</div>
+    <div style="font-size:12.5px;color:#7C88A0;margin-top:3px">Menyiapkan layanan persuratan…</div>
+    <div style="margin:18px auto 0;width:22px;height:22px;border:2.5px solid rgba(22,35,59,.15);border-top-color:#D9480F;border-radius:50%;animation:spin .6s linear infinite"></div>
+  </div>
+</div>
+
+<div id="toasts" role="status" aria-live="polite"></div>
+<div class="modal-bg" id="modal-bg"><div class="modal" id="modal-box"></div></div>
+
+<!-- ============================================================= LANDING -->
+<div class="screen active" id="screen-landing">
+<div class="landing">
+
+  <nav class="landing-nav">
+    <div class="brand">
+      <div class="brand-logo">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
+      </div>
+      <div class="brand-txt">
+        <div class="t1">SIAKAD Surat</div>
+        <div class="t2">STIS Al Wafa</div>
+      </div>
+    </div>
+    <div class="grow"></div>
+    <div id="lp-status" class="badge badge-gray"><span class="dot"></span>Menghubungkan…</div>
+  </nav>
+
+  <main class="landing-main">
+    <div class="landing-inner">
+
+      <div class="landing-hero">
+        <span class="eyebrow">Biro Administrasi Akademik (BAAK)</span>
+        <h1>Layanan Persuratan Akademik</h1>
+        <p>Pengajuan surat keterangan aktif, permohonan magang, izin riset, hingga administrasi
+           kelulusan secara terpadu, cepat, dan otomatis.</p>
+      </div>
+
+      <div class="landing-grid">
+
+        <!-- ------------------------------------------------ Kartu Login -->
+        <div class="card" style="overflow:hidden">
+          <div class="tabs">
+            <button class="tab active" id="tab-mhs" type="button">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 9-10-5L2 9l10 5z"/><path d="M6 11.5V16c0 1.5 2.7 3 6 3s6-1.5 6-3v-4.5"/></svg>
+              Mahasiswa
+            </button>
+            <button class="tab" id="tab-adm" type="button">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+              Admin / BAAK
+            </button>
+          </div>
+
+          <!-- Login mahasiswa -->
+          <div class="card-body" id="form-mhs">
+            <h3 style="font-size:19px">Masuk Pengajuan Surat</h3>
+            <p class="small muted mb2">Gunakan NIM dan Tahun Masuk resmi yang terdaftar di data induk kampus.</p>
+            <form id="login-mhs" autocomplete="on" novalidate>
+              <div class="field">
+                <label for="in-nim">Nomor Induk Mahasiswa (NIM) <span class="req">*</span></label>
+                <div class="input-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M7 10h4M7 14h7"/></svg>
+                  <input class="input" id="in-nim" name="nim" inputmode="numeric" autocomplete="username"
+                         placeholder="Contoh: 20210801042" maxlength="20" required>
+                </div>
+              </div>
+              <div class="field">
+                <label for="in-tahun">Tahun Masuk (PIN Verifikasi) <span class="req">*</span>
+                  <span class="muted" style="float:right;font-weight:600">4 digit angkatan</span>
+                </label>
+                <div class="input-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>
+                  <input class="input" id="in-tahun" name="tahunMasuk" inputmode="numeric" autocomplete="current-password"
+                         placeholder="Contoh: 2021" maxlength="4" required>
+                </div>
+              </div>
+              <button class="btn btn-primary btn-block btn-lg" type="submit" id="btn-login-mhs">
+                Masuk ke Sistem
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              </button>
+            </form>
+            <div class="notice mt2" style="font-size:12.5px">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+              <span>Tanpa perlu mengingat kata sandi rumit. Sistem mengautentikasi otomatis dengan basis data induk STIS Al Wafa.</span>
+            </div>
+
+            <div style="border-top:1px solid var(--line);margin-top:18px;padding-top:14px">
+              <button class="btn btn-ghost btn-block" id="btn-cek-surat" type="button">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>
+                Cek Keaslian Dokumen (Tanpa Login)
+              </button>
+            </div>
+          </div>
+
+          <!-- Login admin -->
+          <div class="card-body hidden" id="form-adm">
+            <h3 style="font-size:19px">Masuk Panel BAAK</h3>
+            <p class="small muted mb2">Khusus tim Biro Administrasi Akademik dan Kemahasiswaan.</p>
+            <form id="login-adm" autocomplete="on" novalidate>
+              <div class="field">
+                <label for="in-user">Username <span class="req">*</span></label>
+                <div class="input-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>
+                  <input class="input" id="in-user" name="username" autocomplete="username" placeholder="admin" required>
+                </div>
+              </div>
+              <div class="field">
+                <label for="in-pass">Password <span class="req">*</span></label>
+                <div class="input-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+                  <input class="input" id="in-pass" name="password" type="password" autocomplete="current-password" placeholder="••••••••" required>
+                </div>
+              </div>
+              <button class="btn btn-dark btn-block btn-lg" type="submit" id="btn-login-adm">
+                Masuk Panel Admin
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              </button>
+            </form>
+            <div class="notice warn mt2" style="font-size:12.5px">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+              <span>Login pertama kali memakai akun bawaan <b>admin</b>. Segera ganti password lewat menu Pengaturan.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- --------------------------------------- Jadwal & Ketersediaan -->
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h3>Jadwal &amp; Ketersediaan Layanan</h3>
+              <div class="sub">Daftar jenis surat yang dapat diajukan pada semester berjalan.</div>
+            </div>
+            <span class="badge badge-green" id="lp-jumlah"><span class="dot"></span>—</span>
+          </div>
+          <div class="card-body" id="lp-layanan">
+            <div class="sk sk-line" style="width:70%"></div>
+            <div class="sk sk-line" style="width:90%"></div>
+            <div class="sk sk-line" style="width:60%"></div>
+            <div class="sk sk-line" style="width:80%"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <footer class="landing-foot">
+    <div><b id="lp-unit">BAAK STIS Al Wafa</b> • Hak Cipta © <span id="lp-tahun"></span></div>
+    <div class="row-wrap" style="gap:18px">
+      <span id="lp-wa"></span>
+      <span id="lp-email"></span>
+      <span class="muted" id="lp-ta"></span>
+    </div>
+  </footer>
+
+</div>
+</div>
+
+<!-- ========================================================== MAHASISWA -->
+<div class="screen" id="screen-mhs">
+  <div class="shell has-bottomnav" id="mhs-shell">
+    <aside class="sidebar" id="mhs-sidebar" aria-label="Menu mahasiswa">
+      <div class="sidebar-head">
+        <div class="brand">
+          <div class="brand-logo">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
+          </div>
+          <div class="brand-txt"><div class="t1">SIAKAD Surat</div><div class="t2">Portal Mahasiswa</div></div>
+        </div>
+      </div>
+      <nav class="sidebar-nav" id="mhs-nav"></nav>
+      <div class="sidebar-foot">
+        <div class="userbox">
+          <div class="brand-logo" style="width:32px;height:32px;border-radius:9px;background:rgba(255,255,255,.14);box-shadow:none;font-size:12px;font-weight:800" id="mhs-ava">--</div>
+          <div class="grow" style="min-width:0">
+            <div class="nm truncate" id="mhs-nama-side">—</div>
+            <div class="rl" id="mhs-nim-side">—</div>
+          </div>
+          <button class="x-btn" id="mhs-keluar" title="Keluar" style="color:rgba(255,255,255,.7)">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></svg>
+          </button>
+        </div>
+      </div>
+    </aside>
+    <div class="backdrop" id="mhs-backdrop"></div>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="hamb" id="mhs-hamb" aria-label="Buka menu">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+        <div class="grow" style="min-width:0">
+          <div class="tb-title truncate" id="mhs-judul">Beranda</div>
+          <div class="tb-sub truncate" id="mhs-sub">Portal Persuratan STIS Al Wafa</div>
+        </div>
+        <span class="sync-dot"><span class="d"></span><span class="t">Tersinkron</span></span>
+        <button class="btn btn-ghost btn-sm" id="mhs-segarkan" title="Muat ulang data">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
+        </button>
+      </header>
+      <div class="content" id="mhsview"></div>
+    </div>
+  </div>
+  <nav class="bottomnav on" id="mhs-bottomnav" aria-label="Navigasi cepat"></nav>
+</div>
+
+<!-- ============================================================== ADMIN -->
+<div class="screen" id="screen-adm">
+  <div class="shell" id="adm-shell">
+    <aside class="sidebar" id="adm-sidebar" aria-label="Menu admin">
+      <div class="sidebar-head">
+        <div class="brand">
+          <div class="brand-logo">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+          </div>
+          <div class="brand-txt"><div class="t1">SIAKAD Surat</div><div class="t2">Panel BAAK</div></div>
+        </div>
+      </div>
+      <nav class="sidebar-nav" id="adm-nav"></nav>
+      <div class="sidebar-foot">
+        <div class="userbox">
+          <div class="brand-logo" style="width:32px;height:32px;border-radius:9px;background:rgba(255,255,255,.14);box-shadow:none;font-size:12px;font-weight:800" id="adm-ava">--</div>
+          <div class="grow" style="min-width:0">
+            <div class="nm truncate" id="adm-nama-side">—</div>
+            <div class="rl">Administrator BAAK</div>
+          </div>
+          <button class="x-btn" id="adm-keluar" title="Keluar" style="color:rgba(255,255,255,.7)">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></svg>
+          </button>
+        </div>
+      </div>
+    </aside>
+    <div class="backdrop" id="adm-backdrop"></div>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="hamb" id="adm-hamb" aria-label="Buka/tutup menu">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+        <div class="grow" style="min-width:0">
+          <div class="tb-title truncate" id="adm-judul">Ringkasan &amp; Statistik</div>
+          <div class="tb-sub truncate" id="adm-sub">Pusat komando BAAK</div>
+        </div>
+        <span class="sync-dot"><span class="d"></span><span class="t">Tersinkron</span></span>
+        <button class="btn btn-ghost btn-sm" id="adm-segarkan">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
+          <span class="hide-sm">Segarkan</span>
+        </button>
+      </header>
+      <div class="content" id="admview"></div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/00-config.js"></script>
+
+<script>
+/* ==========================================================================
+   PRA-AMBIL DATA (berjalan sebelum seluruh modul JS selesai diparsing)
+   --------------------------------------------------------------------------
+   Permintaan pertama ke server dikirim SEKARANG, bukan menunggu ±300 ms
+   parsing modul. Hasilnya dipakai ulang oleh 02-landing.js / 05-app.js.
+   ========================================================================== */
+(function () {
+  var C = window.APP_CONFIG || {};
+  if (!C.GAS_URL || C.GAS_URL.indexOf('GANTI_DENGAN') === 0) return;
+
+  function kirim(action, token) {
+    return fetch(C.GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: action, token: token || '', data: {} }),
+      redirect: 'follow'
+    }).then(function (r) { return r.text(); })
+      .then(function (t) { try { return JSON.parse(t); } catch (e) { return null; } })
+      .catch(function () { return null; });
+  }
+
+  window.__PF = { mulai: Date.now() };
+  window.__PF.info = kirim('infoPublik');
+
+  // Sesi masih berlaku? Muat dashboard-nya sekalian, paralel dengan info publik.
+  try {
+    var raw = localStorage.getItem('siakad:token');
+    if (raw) {
+      var o = JSON.parse(raw);
+      if (o && o.v && o.v.t && (Date.now() - o.t) < 6 * 60 * 60 * 1000) {
+        window.__PF.peran = o.v.peran;
+        window.__PF.token = o.v.t;
+        window.__PF.boot = kirim(o.v.peran === 'ADMIN' ? 'bootstrapAdmin' : 'bootstrapMahasiswa', o.v.t);
+      }
+    }
+  } catch (e) { /* localStorage diblokir — abaikan */ }
+})();
+</script>
+
+<script src="assets/js/01-core.js"></script>
+<script src="assets/js/02-landing.js"></script>
+<script src="assets/js/03-mahasiswa.js"></script>
+<script src="assets/js/05-app.js"></script>
+
+<script>
+/* Service worker: cangkang aplikasi disimpan di perangkat sehingga kunjungan
+   berikutnya — terutama di HP — tampil seketika walau jaringan lambat. */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function () { /* tidak fatal */ });
+  });
+}
+</script>
+</body>
+</html>
