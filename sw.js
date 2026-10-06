@@ -11,7 +11,7 @@
      karena data harus selalu terbaru.
    ========================================================================== */
 
-var VERSI = 'siakad-v2.0.0';
+var VERSI = 'siakad-v3.0.0';
 var CANGKANG = [
   './',
   './index.html',
@@ -21,7 +21,8 @@ var CANGKANG = [
   './assets/js/02-landing.js',
   './assets/js/03-mahasiswa.js',
   './assets/js/04-admin.js',
-  './assets/js/05-app.js'
+  './assets/js/05-app.js',
+  './assets/js/06-admin-modul.js'
 ];
 
 self.addEventListener('install', function (e) {

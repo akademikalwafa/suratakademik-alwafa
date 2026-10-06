@@ -134,6 +134,8 @@
         S.State.profil = r.data.profil;
         Simpan.set('token', { t: r.data.token, peran: 'MAHASISWA' });
         Simpan.set('nim_terakhir', nim);
+        // Login sudah membawa data dashboard (1 panggilan, bukan 2).
+        if (r.data.boot) S.State.prefetchBoot = Promise.resolve({ success: true, data: r.data.boot });
 
         UI.toast('Selamat datang, ' + r.data.profil.nama.split(' ')[0] + '.', 'ok');
         S.Mahasiswa.buka();
@@ -158,6 +160,7 @@
         S.State.profil = r.data.profil;
         Simpan.set('token', { t: r.data.token, peran: 'ADMIN' });
         document.getElementById('in-pass').value = '';
+        if (r.data.boot) S.State.prefetchBoot = Promise.resolve({ success: true, data: r.data.boot });
 
         UI.toast('Selamat datang, ' + r.data.profil.nama + '.', 'ok');
         UI.sibuk(btn, true, 'Menyiapkan panel…');

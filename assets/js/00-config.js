@@ -14,7 +14,7 @@
 
 window.APP_CONFIG = {
 
-  GAS_URL: 'https://script.google.com/macros/s/AKfycbzf7WeD8uu4P-KQ-_f4TQ5q3vI3SoLdtP5XY2ic2MZxRIVhSDsmU4SiMG2qXFg0-89_/exec',
+  GAS_URL: 'https://script.google.com/macros/s/AKfycbzYG5ZhNbeusuBq0w9690H8o_uD5ZoFa8bReHcyu9_WZ8dbbsAnVfTrrH9Kei0uiKiC/exec',
 
   /* --- Pengaturan lanjutan (boleh dibiarkan apa adanya) ------------------ */
   NAMA_APP: 'SIAKAD Surat',

@@ -42,8 +42,9 @@
 
       // 1) Tampilkan data cache seketika (stale-while-revalidate).
       var cache = Simpan.get('mhs_boot');
-      if (cache && St.profil && cache.profil && cache.profil.nim === St.profil.nim) {
+      if (cache && cache.profil && (!St.profil || cache.profil.nim === St.profil.nim)) {
         M.D = cache;
+        M._tanda = JSON.stringify(cache, function (k, v) { return (k === 'server' || k === 'cache') ? undefined : v; });
         M.renderSemua();
       } else {
         document.getElementById('mhsview-beranda').innerHTML = UI.skeleton(4, 86);
@@ -72,12 +73,27 @@
           if (r.code !== 'UNAUTHORIZED') UI.toast(r.message, 'error');
           return;
         }
+        var tandaLama = M._tanda;
+        M._tanda = JSON.stringify(r.data, function (k, v) { return (k === 'server' || k === 'cache') ? undefined : v; });
         M.D = r.data;
         St.profil = r.data.profil;
         Simpan.set('mhs_boot', r.data);
-        M.renderSemua();
+        // Render hanya bila data berubah (gas-instant-ux-pro · Prinsip 2).
+        if (M._tanda !== tandaLama) M.renderSemua();
         if (tampilkanLoading) M.tampilkanPengumuman();
+        M.pantauAntrean();
       });
+    },
+
+    /** Dokumen masih dibuat di server → segarkan otomatis beberapa kali (tanpa klik). */
+    pantauAntrean: function () {
+      var ant = (M.D && M.D.antreanDokumen) || {};
+      var ada = Object.keys(ant).some(function (k) { return ant[k] > 0; });
+      clearTimeout(M._tAntre);
+      if (!ada) { M._nAntre = 0; return; }
+      M._nAntre = (M._nAntre || 0) + 1;
+      if (M._nAntre > 12) return;
+      M._tAntre = setTimeout(function () { if (!document.hidden) M.muat(false); }, M._nAntre < 4 ? 6000 : 15000);
     },
 
     /* ==================================================================
@@ -304,27 +320,22 @@
           '</button>';
       }).join('') + '</div>';
 
-      // Blanko formulir siap cetak (dokumen tanpa nomor surat)
-      var blanko = [];
-      Object.keys(d.dokumenPerAlur || {}).forEach(function (alur) {
-        if (!ak[M.menuDariJenis(alur)] || !ak[M.menuDariJenis(alur)].buka) return;
-        (d.dokumenPerAlur[alur] || []).forEach(function (x) {
-          if (x.kategori === 'FORMULIR' && !blanko.some(function (y) { return y.kode === x.kode; })) blanko.push(x);
-        });
-      });
+      // Blanko formulir siap cetak — hanya 4 formulir (revisi v3), masing-masing
+      // dengan pop-up isian. Isian TIDAK disimpan; hanya untuk menyusun PDF.
+      var blanko = d.blanko || [];
       if (blanko.length) {
         html += '<div class="card mt3"><div class="card-head"><div><h3>Formulir &amp; Blanko Siap Cetak</h3>' +
-          '<div class="sub">Lembar penilaian penguji, kartu kontrol bimbingan, dan formulir lain yang perlu Anda cetak sendiri</div></div>' +
-          '<span class="badge badge-gray">' + blanko.length + ' berkas</span></div>' +
+          '<div class="sub">Isi pop-up sesuai formulir, lalu cetak — data Anda terisi otomatis</div></div>' +
+          '<span class="badge badge-gray">' + blanko.length + ' formulir</span></div>' +
           '<div class="card-body"><div class="dok-list">' +
           blanko.map(function (x) {
             return '<div class="dok-item"><span class="dok-ic">' + ik('printer', 16) + '</span>' +
               '<div class="grow" style="min-width:0"><div class="dok-nama truncate">' + F.esc(x.nama) + '</div>' +
-              '<div class="tiny muted">Tanpa nomor surat • data Anda terisi otomatis</div></div>' +
-              '<button class="btn btn-soft btn-sm" data-cetak="' + F.esc(x.kode) + '">' + ik('download', 14) + 'Cetak</button></div>';
+              '<div class="tiny muted">' + (x.field.length ? x.field.length + ' isian • ' : '') + 'nama, NIM &amp; prodi terisi otomatis</div></div>' +
+              '<button class="btn btn-soft btn-sm" data-cetak="' + F.esc(x.kode) + '">' + ik('edit', 14) + 'Isi &amp; Cetak</button></div>';
           }).join('') + '</div>' +
           '<div class="tiny muted mt2">' + ik('info', 12) +
-          ' Formulir dibuat dari template resmi kampus dan otomatis terisi nama, NIM, prodi, judul, serta jadwal ujian Anda.</div>' +
+          ' Data yang Anda isi di pop-up hanya dipakai untuk menyusun dokumen siap cetak dan tidak dikirim ke BAAK.</div>' +
           '</div></div>';
       }
 
@@ -344,7 +355,7 @@
       });
       M.pasangAksiUmum(el);
       Array.prototype.forEach.call(el.querySelectorAll('[data-cetak]'), function (b) {
-        b.onclick = function (ev) { M.cetakBlanko(b.getAttribute('data-cetak'), ev.currentTarget); };
+        b.onclick = function () { M.cetakBlanko(b.getAttribute('data-cetak')); };
       });
     },
 
@@ -415,7 +426,7 @@
         g.beginPath(); g.arc(W - 40, -30, 190, 0, Math.PI * 2); g.fill();
 
         g.fillStyle = '#F97316'; g.font = 'bold 20px "Plus Jakarta Sans", sans-serif';
-        g.fillText((jadwal.tipe === 'SIDANG' ? 'SIDANG MUNAQASYAH' : 'SEMINAR PROPOSAL'), 56, 88);
+        g.fillText((jadwal.tipe === 'SIDANG' ? 'SIDANG SKRIPSI' : 'SEMINAR PROPOSAL'), 56, 88);
         g.fillStyle = '#fff'; g.font = 'bold 46px "Plus Jakarta Sans", sans-serif';
         g.fillText(F.hari(jadwal.tanggal) + ', ' + F.tgl(jadwal.tanggal), 56, 156);
 
@@ -491,8 +502,14 @@
                 (r.dokumen.length > 1 ? r.dokumen.length + ' Berkas' : 'Unduh') + '</button>'
               : (r.status === 'MENUNGGU'
                 ? '<button class="btn btn-danger btn-sm" data-batal="' + F.esc(r.id) + '">Batalkan</button>'
-                : '<span class="muted small">—</span>')) + '</td></tr>';
+                : (M.sedangDibuat(r) ? '<span class="badge badge-amber"><span class="spinner dark" style="width:10px;height:10px"></span> Dibuat…</span>'
+                  : '<span class="muted small">—</span>'))) + '</td></tr>';
         }).join('') + '</tbody></table></div></div>';
+    },
+
+    /** Pengajuan disetujui yang PDF-nya masih di antrean server. */
+    sedangDibuat: function (r) {
+      return r.status === 'DISETUJUI' && ((M.D.antreanDokumen || {})[r.id] || 0) > 0;
     },
 
     ringkasData: function (r) {
@@ -576,14 +593,50 @@
       });
     },
 
-    /** Cetak blanko formulir (dokumen tanpa nomor surat) atas permintaan mahasiswa. */
-    cetakBlanko: function (kode, btn) {
-      UI.sibuk(btn, true, 'Menyiapkan…');
-      API.kirim('cetakFormulir', { kode: kode }).then(function (r) {
-        UI.sibuk(btn, false);
-        if (!r.success) return UI.toast(r.message, 'error');
-        UI.toast('Formulir siap.', 'ok');
-        S.Dok.pratinjau(r.data);
+    /**
+     * Pop-up isian blanko → PDF siap cetak (base64, tanpa berkas Drive).
+     * Isian diingat di perangkat ini saja agar tidak perlu mengetik ulang.
+     */
+    cetakBlanko: function (kode) {
+      var def = null;
+      ((M.D && M.D.blanko) || []).forEach(function (x) { if (x.kode === kode) def = x; });
+      if (!def) return UI.toast('Formulir tidak tersedia.', 'error');
+      var ingat = Simpan.get('blanko_' + M.D.profil.nim + '_' + kode) || {};
+      var field = def.field.map(function (f) {
+        var o = {}; for (var k in f) o[k] = f[k];
+        if (ingat[f.nama] !== undefined && ingat[f.nama] !== '') o.nilai = ingat[f.nama];
+        return o;
+      });
+      UI.modal({
+        judul: def.nama,
+        sub: 'Nama, NIM, dan prodi terisi otomatis',
+        lebar: field.length > 6,
+        isi:
+          '<dl class="kv mb2" style="background:var(--surface-2);padding:12px 14px;border-radius:12px">' +
+          '<dt>Nama / NIM</dt><dd>' + F.esc(M.D.profil.nama) + ' • ' + F.esc(M.D.profil.nim) + '</dd>' +
+          '<dt>Program Studi</dt><dd>' + F.esc(M.D.profil.prodiNama || M.D.profil.prodi) + '</dd></dl>' +
+          (field.length
+            ? S.Form.render(field, { prefix: 'bl', dosen: M.D.dosen || [], tanpaKotak: true })
+            : '<div class="notice">' + ik('info', 16) + '<span>Formulir ini tidak memerlukan isian tambahan.</span></div>') +
+          '<div class="tiny muted mt1">' + ik('lock', 12) + ' Isian tidak dikirim ke BAAK — hanya untuk dokumen siap cetak.</div>',
+        kaki: '<button class="btn btn-ghost" data-tutup>Batal</button>' +
+          '<button class="btn btn-primary" id="bl-buat">' + ik('printer', 15) + 'Buat PDF</button>',
+        siap: function (box) {
+          box.querySelector('#bl-buat').onclick = function (ev) {
+            var nilai = S.Form.ambil(box);
+            Simpan.set('blanko_' + M.D.profil.nim + '_' + kode, nilai);
+            var btn = ev.currentTarget;
+            UI.sibuk(btn, true, 'Menyusun PDF…');
+            API.kirim('cetakBlanko', { kode: kode, nilai: nilai }).then(function (r) {
+              UI.sibuk(btn, false);
+              if (!r.success) return UI.toast(r.message, 'error');
+              S.Dok.pratinjau(r.data, {
+                sub: 'Siap dicetak',
+                catatan: 'Dokumen disusun langsung dari isian Anda — tidak disimpan di server.'
+              });
+            });
+          };
+        }
       });
     },
 
@@ -1043,13 +1096,8 @@
           '<dt>Tanggal Daftar</dt><dd>' + F.tgl(new Date()) + '</dd></dl>' +
           '<div class="field"><label for="sp-judul">Judul Proposal Skripsi <span class="req">*</span></label>' +
           '<textarea class="textarea" id="sp-judul" maxlength="300" placeholder="Tuliskan judul proposal sesuai arahan calon dosen pembimbing"></textarea></div>' +
-          '<div class="grid-2">' +
           '<div class="field"><label for="sp-wa">No. WhatsApp Aktif <span class="req">*</span></label>' +
           '<input class="input mono" id="sp-wa" inputmode="numeric" maxlength="15" placeholder="08xxxxxxxxxx" value="' + F.esc(d.profil.noWa || '') + '"></div>' +
-          '<div class="field"><label for="sp-pemb">Calon Pembimbing <span class="muted">(opsional)</span></label>' +
-          '<select class="select" id="sp-pemb"><option value="">— Belum ditentukan —</option>' +
-          dosenNidn.map(function (x) { return '<option>' + F.esc(x.nama) + '</option>'; }).join('') + '</select></div>' +
-          '</div>' +
           M.blokDinamis('SEMPRO', ['judul', 'no_wa']) +
           '<button class="btn btn-primary btn-block btn-lg mt2" id="sp-kirim">' + ik('send', 16) + 'Daftar Seminar Proposal</button>' +
           '</div></div>';
@@ -1082,10 +1130,11 @@
           '<div class="hint">Pastikan judul sudah disetujui dosen penguji — judul ini yang tercetak pada SK Pembimbing.</div></div>' +
           '<div class="field"><label for="rs-penguji">Dosen Penguji Sempro (khusus NIDN) <span class="req">*</span></label>' +
           '<select class="select" id="rs-penguji"><option value="">— Pilih dosen penguji —</option>' +
-          dosenNidn.map(function (x) { return '<option value="' + F.esc(x.id) + '">' + F.esc(x.nama) + (x.nidn ? ' (NIDN: ' + F.esc(x.nidn) + ')' : '') + '</option>'; }).join('') +
+          dosenNidn.map(function (x) {
+            var pilih = jadwal && jadwal.penguji1 && String(jadwal.penguji1).indexOf(x.nama) === 0 ? ' selected' : '';
+            return '<option value="' + F.esc(x.id) + '"' + pilih + '>' + F.esc(x.nama) + (x.nidn ? ' (NIDN: ' + F.esc(x.nidn) + ')' : '') + '</option>';
+          }).join('') +
           '</select><div class="hint">Hanya dosen berstatus NIDN aktif sesuai ketentuan PRD 5.B.</div></div>' +
-          '<div class="field"><label for="rs-catatan">Catatan Perbaikan dari Penguji</label>' +
-          '<textarea class="textarea" id="rs-catatan" maxlength="1000" placeholder="Ringkas butir-butir perbaikan yang diminta dewan penguji…"></textarea></div>' +
           '<div class="field"><label>Lembar Pengesahan Revisi (PDF) <span class="muted">(opsional)</span></label>' +
           '<div class="upload" id="rs-upload"><input type="file" accept=".pdf,.jpg,.jpeg,.png">' +
           '<div data-info><div style="color:var(--orange-600);line-height:0;margin-bottom:6px">' + ik('upload', 24) + '</div>' +
@@ -1096,26 +1145,28 @@
       }
       isi += '</div>';
 
-      /* --- Tab 3: SK Pembimbing --- */
+      /* --- Tab 3: SK Pembimbing — mahasiswa hanya melihat SK Pembimbing & Kartu Kontrol Bimbingan --- */
       isi += '<div data-panel="sk" class="hidden">';
-      var skSiap = revisi && revisi.status === 'DISETUJUI' && revisi.pdfUrl;
-      isi += '<div class="card"><div class="card-head"><div><h3>SK Pembimbing Skripsi &amp; Kartu Bimbingan</h3>' +
+      var dokSk = M.dokumenSk(revisi);
+      var skSiap = revisi && revisi.status === 'DISETUJUI' && dokSk.length > 0;
+      var skDibuat = revisi && revisi.status === 'DISETUJUI' && !skSiap && ((d.antreanDokumen || {})[revisi.id] || 0) > 0;
+      isi += '<div class="card"><div class="card-head"><div><h3>SK Pembimbing Skripsi &amp; Kartu Kontrol Bimbingan</h3>' +
         '<div class="sub">Terbit setelah Pernyataan Revisi diverifikasi BAAK</div></div>' +
-        (skSiap ? '<span class="badge badge-green">Siap Diunduh</span>' : '<span class="badge badge-gray">Belum Terbit</span>') + '</div>' +
+        (skSiap ? '<span class="badge badge-green">Siap Diunduh</span>'
+          : (skDibuat ? '<span class="badge badge-amber">Sedang Dibuat</span>' : '<span class="badge badge-gray">Belum Terbit</span>')) + '</div>' +
         '<div class="card-body">' +
         (skSiap
-          ? '<dl class="kv mb2"><dt>Nomor SK</dt><dd class="mono">' + F.esc(revisi.nomorSurat) + '</dd>' +
+          ? '<dl class="kv mb2"><dt>Nomor SK</dt><dd class="mono">' + F.esc(revisi.nomorSurat || (dokSk[0] && dokSk[0].nomor) || '-') + '</dd>' +
           '<dt>Dosen Pembimbing</dt><dd>' + F.esc(revisi.data.pembimbing || '-') + '</dd>' +
           '<dt>Judul Disetujui</dt><dd>' + F.esc(revisi.data.judulFinal || '-') + '</dd>' +
           '<dt>Tanggal Terbit</dt><dd>' + F.tgl(revisi.tanggalProses) + '</dd></dl>' +
           '<div class="notice ok mb2">' + ik('checkCircle', 17) +
           '<span>SK Pembimbing sudah terbit. Menu <b>Sidang Skripsi</b> kini terbuka untuk Anda.</span></div>' +
-          '<div class="row-wrap">' +
-          '<button class="btn btn-ghost grow" data-dokpv="' + F.esc(revisi.id) + '">' + ik('eye', 16) + 'Pratinjau</button>' +
-          '<button class="btn btn-primary grow" data-dokdl="' + F.esc(revisi.id) + '">' + ik('download', 16) +
-          'Unduh SK &amp; Kartu Bimbingan</button></div>'
-          : UI.kosong('SK Pembimbing Belum Diterbitkan',
-            'SK baru dapat diterbitkan setelah Anda mengisi Pernyataan Revisi dan BAAK menetapkan dosen pembimbing.', 'award')) +
+          S.Dok.daftar(dokSk)
+          : (skDibuat
+            ? '<div class="notice warn">' + ik('clock', 17) + '<span>SK Pembimbing &amp; Kartu Kontrol Bimbingan sedang dibuat sistem. Muat ulang dalam beberapa saat.</span></div>'
+            : UI.kosong('SK Pembimbing Belum Diterbitkan',
+              'SK baru dapat diterbitkan setelah Anda mengisi Pernyataan Revisi dan BAAK menetapkan dosen pembimbing.', 'award'))) +
         '</div></div>';
       isi += '</div>';
 
@@ -1123,6 +1174,7 @@
       el.innerHTML = M.kerangka('sempro', 'Seminar Proposal (Sempro)',
         'Pendaftaran sempro, pernyataan revisi, hingga penerbitan SK Pembimbing Skripsi.', isi);
       M.pasangAksiUmum(el);
+      S.Dok.pasang(el.querySelector('[data-panel="sk"]'), M.dokumenSk(revisi));
       if (!el.querySelector('#sp-tabs')) return;
 
       M.pasangTab(el, 'sp-tabs');
@@ -1135,7 +1187,6 @@
           var data = {
             judul: el.querySelector('#sp-judul').value.trim(),
             noWa: el.querySelector('#sp-wa').value.trim(),
-            calonPembimbing: el.querySelector('#sp-pemb').value,
             _dinamis: dynS.nilai
           };
           if (data.judul.length < 10) return UI.toast('Judul proposal minimal 10 karakter.', 'error');
@@ -1151,7 +1202,6 @@
           var data = {
             judulFinal: el.querySelector('#rs-judul').value.trim(),
             pengujiId: el.querySelector('#rs-penguji').value,
-            catatanRevisi: el.querySelector('#rs-catatan').value.trim(),
             lembarFileId: ung.fileId, lembarUrl: ung.url
           };
           if (data.judulFinal.length < 10) return UI.toast('Judul final minimal 10 karakter.', 'error');
@@ -1159,6 +1209,13 @@
           M.ajukan('REVISI_SEMPRO', data, ev.currentTarget);
         };
       }
+    },
+
+    /** Dokumen SK yang boleh dilihat mahasiswa: SK Pembimbing + Kartu Kontrol Bimbingan saja. */
+    dokumenSk: function (revisi) {
+      return ((revisi && revisi.dokumen) || []).filter(function (x) {
+        return x.kode === 'SK_PEMBIMBING' || x.kode === 'F_KARTU_BIMBINGAN';
+      });
     },
 
     pasangTab: function (el, idTabs) {
@@ -1186,6 +1243,13 @@
       var revisi = (d.riwayat || []).filter(function (r) { return r.jenis === 'REVISI_SIDANG'; })[0];
       var jadwal = (d.penguji || []).filter(function (x) { return x.jenis === 'SIDANG'; })[0];
 
+      /** Penguji sidang sudah ditetapkan BAAK → pilih otomatis berdasarkan nama. */
+      function idDariNama(nama) {
+        var n = String(nama || '').toLowerCase(), hit = '';
+        if (!n) return '';
+        dosenNidn.forEach(function (x) { if (!hit && n.indexOf(String(x.nama).toLowerCase()) === 0) hit = x.id; });
+        return hit;
+      }
       function opsiDosen(terpilih) {
         return '<option value="">— Pilih dosen —</option>' + dosenNidn.map(function (x) {
           return '<option value="' + F.esc(x.id) + '"' + (terpilih === x.id ? ' selected' : '') + '>' +
@@ -1209,7 +1273,9 @@
           '<div style="display:grid;gap:6px;font-size:13.5px">' +
           '<div>' + ik('calendar', 15) + ' ' + F.hari(jadwal.tanggalJadwal) + ', ' + F.tgl(jadwal.tanggalJadwal) + '</div>' +
           '<div>' + ik('clock', 15) + ' Pukul ' + F.esc(jadwal.jamJadwal) + ' WIB</div>' +
-          '<div>' + ik('building', 15) + ' ' + F.esc(jadwal.ruang) + '</div></div></div>';
+          '<div>' + ik('building', 15) + ' ' + F.esc(jadwal.ruang) + '</div>' +
+          (jadwal.penguji1 ? '<div>' + ik('users', 15) + ' Penguji: ' + F.esc([jadwal.penguji1, jadwal.penguji2, jadwal.penguji3].filter(Boolean).join(' • ')) + '</div>' : '') +
+          '</div></div>';
       }
       if (daftar) {
         isi += '<div class="card"><div class="card-head"><div><h3>Pendaftaran Sidang Skripsi</h3>' +
@@ -1218,9 +1284,11 @@
           '<dt>Judul Skripsi</dt><dd>' + F.esc(daftar.data.judul || '-') + '</dd>' +
           '<dt>Tempat, Tgl. Lahir</dt><dd>' + F.esc(daftar.data.tempatLahir || '-') + ', ' + F.tgl(daftar.data.tanggalLahir) + '</dd>' +
           '<dt>No. WhatsApp</dt><dd class="mono">' + F.esc(daftar.data.noWa || '-') + '</dd>' +
-          (jadwal && jadwal.penguji1 ? '<dt>Ketua Penguji</dt><dd>' + F.esc(jadwal.penguji1) + '</dd>' +
-            '<dt>Sekretaris</dt><dd>' + F.esc(jadwal.penguji2 || '-') + '</dd>' +
-            '<dt>Anggota</dt><dd>' + F.esc(jadwal.penguji3 || '-') + '</dd>' : '') +
+          (jadwal && jadwal.penguji1 ? '<dt>Penguji 1</dt><dd>' + F.esc(jadwal.penguji1) + '</dd>' +
+            '<dt>Penguji 2</dt><dd>' + F.esc(jadwal.penguji2 || '-') + '</dd>' +
+            '<dt>Penguji 3</dt><dd>' + F.esc(jadwal.penguji3 || '-') + '</dd>' : '') +
+          (daftar.status === 'DISETUJUI' && !(jadwal && jadwal.tanggalJadwal)
+            ? '<div class="notice mt2">' + ik('clock', 17) + '<span>Menunggu BAAK menetapkan jadwal &amp; penguji sidang.</span></div>' : '') +
           '</dl>' +
           (daftar.status === 'DITOLAK' && daftar.alasanTolak
             ? '<div class="notice danger mt2">' + ik('alert', 17) + '<span>' + F.esc(daftar.alasanTolak) + '</span></div>' : '') +
@@ -1270,7 +1338,9 @@
           '<dt>Penguji 2</dt><dd>' + F.esc(revisi.data.penguji2 || '-') + '</dd>' +
           '<dt>Penguji 3</dt><dd>' + F.esc(revisi.data.penguji3 || '-') + '</dd></dl>' +
           (revisi.status === 'DISETUJUI'
-            ? '<div class="notice ok mt2">' + ik('checkCircle', 17) + '<span>SKL telah terbit. Menu <b>Administrasi Kelulusan</b> kini terbuka.</span></div>'
+            ? '<div class="notice ok mt2">' + ik('checkCircle', 17) + '<span>Formulir Pernyataan Penyerahan Skripsi dan Bebas Perpustakaan telah terbit. ' +
+              'Menu <b>Administrasi Kelulusan</b> kini terbuka.</span></div>' +
+              (revisi.dokumen && revisi.dokumen.length ? '<div class="mt2" data-dok-revisi>' + S.Dok.daftar(revisi.dokumen) + '</div>' : '')
             : '') +
           '</div></div>';
       } else {
@@ -1281,12 +1351,12 @@
           '<div class="field"><label for="rk-acc">Tanggal ACC Pengesahan Skripsi <span class="req">*</span></label>' +
           '<input class="input" id="rk-acc" type="date"></div>' +
           '<h4 style="font-size:14px;margin:18px 0 10px">Dewan Penguji Sidang Skripsi (Dosen NIDN)</h4>' +
-          '<div class="field"><label for="rk-p1">Penguji 1 — Ketua Sidang <span class="req">*</span></label>' +
-          '<select class="select" id="rk-p1">' + opsiDosen(jadwal ? '' : '') + '</select></div>' +
-          '<div class="field"><label for="rk-p2">Penguji 2 — Sekretaris Sidang <span class="req">*</span></label>' +
-          '<select class="select" id="rk-p2">' + opsiDosen('') + '</select></div>' +
-          '<div class="field"><label for="rk-p3">Penguji 3 — Anggota / Penguji Ahli <span class="req">*</span></label>' +
-          '<select class="select" id="rk-p3">' + opsiDosen('') + '</select></div>' +
+          '<div class="field"><label for="rk-p1">Penguji 1 <span class="req">*</span></label>' +
+          '<select class="select" id="rk-p1">' + opsiDosen(idDariNama(jadwal && jadwal.penguji1)) + '</select></div>' +
+          '<div class="field"><label for="rk-p2">Penguji 2 <span class="req">*</span></label>' +
+          '<select class="select" id="rk-p2">' + opsiDosen(idDariNama(jadwal && jadwal.penguji2)) + '</select></div>' +
+          '<div class="field"><label for="rk-p3">Penguji 3 <span class="req">*</span></label>' +
+          '<select class="select" id="rk-p3">' + opsiDosen(idDariNama(jadwal && jadwal.penguji3)) + '</select></div>' +
           '<div class="field"><label>Lembar Pengesahan Revisi <span class="muted">(opsional)</span></label>' +
           '<div class="upload" id="rk-upload"><input type="file" accept=".pdf,.jpg,.jpeg,.png">' +
           '<div data-info><div style="color:var(--orange-600);line-height:0;margin-bottom:6px">' + ik('upload', 24) + '</div>' +
@@ -1297,32 +1367,33 @@
       }
       isi += '</div>';
 
-      /* Tab SKL */
+      /* Tab SKL — tampil setelah BAAK menekan "Kirim ke akun mahasiswa" */
       isi += '<div data-panel="skl" class="hidden">';
-      var sklSiap = revisi && revisi.status === 'DISETUJUI' && revisi.pdfUrl;
+      var dokSkl = ((daftar && daftar.dokumen) || []).filter(function (x) { return x.kode === 'SKL'; });
+      var sklSiap = dokSkl.length > 0;
       isi += '<div class="card"><div class="card-head"><div><h3>Surat Keterangan Lulus (SKL)</h3>' +
         '<div class="sub">Dokumen resmi pengganti ijazah sementara</div></div>' +
         (sklSiap ? '<span class="badge badge-green">Sah &amp; Dapat Dicetak</span>' : '<span class="badge badge-gray">Belum Terbit</span>') + '</div>' +
         '<div class="card-body">' +
         (sklSiap
-          ? '<dl class="kv mb2"><dt>Nomor SKL</dt><dd class="mono">' + F.esc(revisi.nomorSurat) + '</dd>' +
-          '<dt>Judul Skripsi</dt><dd>' + F.esc(revisi.data.judulFinal || '-') + '</dd>' +
-          '<dt>Tanggal Terbit</dt><dd>' + F.tgl(revisi.tanggalProses) + '</dd>' +
+          ? '<dl class="kv mb2"><dt>Nomor SKL</dt><dd class="mono">' + F.esc(dokSkl[0].nomor || '-') + '</dd>' +
+          '<dt>Judul Skripsi</dt><dd>' + F.esc((revisi && revisi.data.judulFinal) || daftar.data.judul || '-') + '</dd>' +
+          (jadwal && jadwal.ipk ? '<dt>IPK / Predikat</dt><dd>' + F.esc(jadwal.ipk) + (jadwal.predikat ? ' — ' + F.esc(jadwal.predikat) : '') + '</dd>' : '') +
+          '<dt>Tanggal Terbit</dt><dd>' + F.tgl(dokSkl[0].tanggal) + '</dd>' +
           '<dt>Verifikasi</dt><dd><span class="badge badge-green">' + ik('qr', 12) + ' QR-Code Aktif</span></dd></dl>' +
-          '<div class="row-wrap">' +
-          '<button class="btn btn-ghost grow" data-dokpv="' + F.esc(revisi.id) + '">' + ik('eye', 16) + 'Pratinjau SKL</button>' +
-          '<button class="btn btn-primary grow" data-dokdl="' + F.esc(revisi.id) + '">' + ik('download', 16) + 'Unduh Dokumen</button>' +
-          '</div>' +
+          '<div data-dok-skl>' + S.Dok.daftar(dokSkl) + '</div>' +
           '<div class="tiny muted center mt1">Keaslian dokumen dapat diperiksa siapa pun melalui menu Cek Keaslian Dokumen di halaman depan.</div>'
           : UI.kosong('SKL Belum Terbit',
-            'SKL terbit otomatis setelah BAAK menyetujui Pernyataan Revisi Skripsi Anda.', 'award')) +
+            'SKL dikirim BAAK ke akun Anda setelah IPK & predikat kelulusan ditetapkan.', 'award')) +
         '</div></div>';
       isi += '</div>';
 
       var el = document.getElementById('mhsview-sidang');
-      el.innerHTML = M.kerangka('sidang', 'Sidang Skripsi (Sidang Skripsi)',
+      el.innerHTML = M.kerangka('sidang', 'Sidang Skripsi',
         'Pendaftaran sidang, pernyataan revisi skripsi, hingga penerbitan Surat Keterangan Lulus.', isi);
       M.pasangAksiUmum(el);
+      S.Dok.pasang(el.querySelector('[data-dok-skl]'), dokSkl);
+      S.Dok.pasang(el.querySelector('[data-dok-revisi]'), (revisi && revisi.dokumen) || []);
       if (!el.querySelector('#sd-tabs')) return;
 
       M.pasangTab(el, 'sd-tabs');
@@ -1375,6 +1446,9 @@
     renderKelulusan: function () {
       var k = M.D.kelulusan;
       var isi;
+      var dokKl = M.D.dokumenKelulusan || [];
+      var dokPenyerahan = dokKl.filter(function (x) { return x.kode === 'F_PENYERAHAN_SKRIPSI'; });
+      var dokKartu = dokKl.filter(function (x) { return x.kode === 'F_PENGAMBILAN_IJAZAH'; });
 
       if (!k) {
         isi = '<div class="card"><div class="card-body">' +
@@ -1384,125 +1458,149 @@
           '</div></div>';
       } else {
         var t1 = k.tahap1Status || 'BELUM';
-        var t2 = k.tahap2Status || 'TERKUNCI';
-        var t3 = k.tahap3Status || 'TERKUNCI';
+        var t2 = (!k.tahap2Status || k.tahap2Status === 'TERKUNCI') ? 'BELUM' : k.tahap2Status;
+        var t3 = k.tahap3Status || 'BELUM';
+        var bisa1 = t1 === 'BELUM' || t1 === 'REVISI';
+        var bisa2 = t2 === 'BELUM' || t2 === 'REVISI';
+        var selesai = t3 === 'SIAP';
 
-        function kelasTahap(st) {
-          if (st === 'DISETUJUI') return 'done';
-          if (st === 'TERKUNCI') return 'locked';
-          return 'now';
+        function labelSt(st) {
+          return st === 'DISETUJUI' ? 'Selesai' : (st === 'MENUNGGU' ? 'Terkirim' : (st === 'REVISI' ? 'Perlu revisi' : (st === 'SIAP' ? 'Siap' : 'Perlu diisi')));
+        }
+        function badgeKirim(st) {
+          if (st === 'MENUNGGU') return '<span class="badge badge-blue"><span class="dot"></span>Terkirim</span>';
+          return F.statusBadge(st);
         }
 
         isi =
           '<div class="steps mb3">' +
-          ['Tahap 1', 'Tahap 2', 'Tahap 3'].map(function (t, i) {
-            var st = [t1, t2, t3][i];
-            var cls = st === 'DISETUJUI' ? 'done' : (st === 'TERKUNCI' ? '' : 'now');
-            return '<div class="step ' + cls + '"><div class="cir">' + (st === 'DISETUJUI' ? ik('check', 14, 2.6) : (i + 1)) + '</div>' +
-              '<div class="st">' + t + '</div><div class="sd">' + (st === 'DISETUJUI' ? 'Selesai' : (st === 'TERKUNCI' ? 'Terkunci' : (st === 'MENUNGGU' ? 'Ditinjau' : (st === 'SIAP' ? 'Siap' : 'Perlu diisi')))) + '</div></div>';
+          [['Tahap 1', t1], ['Tahap 2', t2], ['Tahap 3 · ACC BAAK', selesai ? 'SIAP' : (t3 === 'MENUNGGU' ? 'MENUNGGU' : 'BELUM')]].map(function (x, i) {
+            var st = x[1];
+            var cls = (st === 'DISETUJUI' || st === 'SIAP') ? 'done' : ((st === 'MENUNGGU' && i < 2) ? 'done' : 'now');
+            if (i === 2 && st === 'BELUM') cls = '';
+            return '<div class="step ' + cls + '"><div class="cir">' + (cls === 'done' ? ik('check', 14, 2.6) : (i + 1)) + '</div>' +
+              '<div class="st">' + x[0] + '</div><div class="sd">' +
+              (i === 2 ? (st === 'SIAP' ? 'Di-ACC' : (st === 'MENUNGGU' ? 'Menunggu ACC' : 'Setelah tahap 1 & 2')) : labelSt(st)) + '</div></div>';
           }).join('') + '</div>' +
 
+          (!selesai && (bisa1 || bisa2)
+            ? '<div class="notice mb2">' + ik('info', 17) + '<span>Isi <b>Tahap 1 dan Tahap 2 sekaligus</b>, lalu kirim. ' +
+              'BAAK cukup melakukan ACC satu kali pada Tahap 3.</span></div>' : '') +
+
           /* Tahap 1 */
-          '<div class="tahap ' + kelasTahap(t1) + '"><div class="tahap-h">' +
-          '<div class="tahap-n">' + (t1 === 'DISETUJUI' ? ik('check', 14, 2.6) : '1') + '</div>' +
-          '<div class="grow"><div class="bold">Bebas Pustaka &amp; Penyerahan Skripsi</div>' +
-          '<div class="tiny muted">Validasi naskah hardcover &amp; surat bebas pinjaman perpustakaan</div></div>' +
-          F.statusBadge(t1) + '</div>' +
+          '<div class="tahap ' + (bisa1 ? 'now' : 'done') + '"><div class="tahap-h">' +
+          '<div class="tahap-n">' + (bisa1 ? '1' : ik('check', 14, 2.6)) + '</div>' +
+          '<div class="grow"><div class="bold">Penyerahan Skripsi &amp; Bebas Perpustakaan</div>' +
+          '<div class="tiny muted">Bukti penyerahan naskah hardcover &amp; surat bebas pinjaman perpustakaan</div></div>' +
+          badgeKirim(t1) + '</div>' +
           '<div class="tahap-b">' +
-          '<dl class="kv mb2"><dt>Judul Naskah</dt><dd>' + F.esc(k.judulFinal || '-') + '</dd>' +
-          '<dt>Persyaratan</dt><dd>Hardcover 2 eksemplar + Surat Bebas Pustaka (tanda tangan basah, dipindai)</dd></dl>' +
-          (t1 === 'DISETUJUI'
-            ? '<div class="notice ok">' + ik('checkCircle', 17) + '<span>Berkas Tahap 1 telah disetujui BAAK' + (k.tahap1Url ? ' — <a href="#" data-berkas="' + F.esc(k.tahap1Url) + '" data-berkas-nama="Berkas Tahap 1">lihat berkas</a>' : '') + '.</span></div>'
-            : (t1 === 'MENUNGGU'
-              ? '<div class="notice warn">' + ik('clock', 17) + '<span>Sedang ditinjau Tim Akademik BAAK. Estimasi 1–2 hari kerja.</span></div>'
-              : (t1 === 'REVISI'
-                ? '<div class="notice danger mb2">' + ik('alert', 17) + '<span><b>Catatan BAAK:</b> ' + F.esc(k.tahap1Catatan || '-') + '</span></div>' +
-                M.kotakUnggahTahap(1)
-                : M.kotakUnggahTahap(1)))) +
+          '<dl class="kv mb2"><dt>Judul Naskah</dt><dd>' + F.esc(k.judulFinal || '-') + '</dd></dl>' +
+          (dokPenyerahan.length
+            ? '<div class="mb2" data-dok-penyerahan><div class="tiny muted mb1">Formulir untuk ditandatangani perpustakaan:</div>' + S.Dok.daftar(dokPenyerahan, true) + '</div>' : '') +
+          (t1 === 'REVISI' ? '<div class="notice danger mb2">' + ik('alert', 17) + '<span><b>Catatan BAAK:</b> ' + F.esc(k.tahap1Catatan || '-') + '</span></div>' : '') +
+          (bisa1 && !selesai
+            ? M.kotakUnggahTahap(1)
+            : '<div class="notice ok">' + ik('checkCircle', 17) + '<span>Berkas Tahap 1 ' + (t1 === 'DISETUJUI' ? 'disetujui BAAK' : 'terkirim') +
+              (k.tahap1Url ? ' — <a href="#" data-berkas="' + F.esc(k.tahap1Url) + '" data-berkas-nama="Berkas Tahap 1">lihat berkas</a>' : '') + '.</span></div>') +
           '</div></div>' +
 
           /* Tahap 2 */
-          '<div class="tahap ' + kelasTahap(t2) + '"><div class="tahap-h">' +
-          '<div class="tahap-n">' + (t2 === 'DISETUJUI' ? ik('check', 14, 2.6) : '2') + '</div>' +
+          '<div class="tahap ' + (bisa2 ? 'now' : 'done') + '"><div class="tahap-h">' +
+          '<div class="tahap-n">' + (bisa2 ? '2' : ik('check', 14, 2.6)) + '</div>' +
           '<div class="grow"><div class="bold">Publikasi Jurnal Ilmiah / LOA</div>' +
           '<div class="tiny muted">Wajib SINTA 1–6 atau prosiding nasional terindeks</div></div>' +
-          F.statusBadge(t2) + '</div>' +
+          badgeKirim(t2) + '</div>' +
           '<div class="tahap-b">' +
-          (t2 === 'TERKUNCI'
-            ? '<div class="notice">' + ik('lock', 17) + '<span>Terbuka otomatis setelah Tahap 1 disetujui BAAK.</span></div>'
-            : (t2 === 'DISETUJUI'
-              ? '<dl class="kv"><dt>Jurnal / Penerbit</dt><dd>' + F.esc(k.tahap2Jurnal || '-') + '</dd>' +
+          (t2 === 'REVISI' ? '<div class="notice danger mb2">' + ik('alert', 17) + '<span><b>Catatan BAAK:</b> ' + F.esc(k.tahap2Catatan || '-') + '</span></div>' : '') +
+          (bisa2 && !selesai
+            ? M.kotakUnggahTahap(2)
+            : '<dl class="kv"><dt>Jurnal / Penerbit</dt><dd>' + F.esc(k.tahap2Jurnal || '-') + '</dd>' +
               (k.tahap2Link ? '<dt>Tautan Publikasi</dt><dd><a href="' + F.esc(k.tahap2Link) + '" target="_blank" rel="noopener">' + F.esc(k.tahap2Link) + '</a></dd>' : '') +
-              '</dl><div class="notice ok mt2">' + ik('checkCircle', 17) + '<span>Berkas publikasi telah divalidasi BAAK.</span></div>'
-              : (t2 === 'MENUNGGU'
-                ? '<div class="notice warn">' + ik('clock', 17) + '<span>Sedang ditinjau Tim Akademik BAAK. Estimasi 1–2 hari kerja.</span></div>'
-                : (t2 === 'REVISI'
-                  ? '<div class="notice danger mb2">' + ik('alert', 17) + '<span><b>Catatan BAAK:</b> ' + F.esc(k.tahap2Catatan || '-') + '</span></div>' + M.kotakUnggahTahap(2)
-                  : M.kotakUnggahTahap(2))))) +
+              '</dl>') +
           '</div></div>' +
 
+          (!selesai && (bisa1 || bisa2)
+            ? '<button class="btn btn-primary btn-block btn-lg mb3" id="kl-kirim">' + ik('send', 16) +
+              (bisa1 && bisa2 ? 'Kirim Berkas Tahap 1 &amp; 2' : 'Kirim Perbaikan Tahap ' + (bisa1 ? '1' : '2')) + '</button>' : '') +
+
           /* Tahap 3 */
-          '<div class="tahap ' + (t3 === 'SIAP' ? 'done' : 'locked') + '"><div class="tahap-h">' +
-          '<div class="tahap-n">' + (t3 === 'SIAP' ? ik('check', 14, 2.6) : '3') + '</div>' +
-          '<div class="grow"><div class="bold">Kartu Pengambilan Ijazah &amp; Toga</div>' +
-          '<div class="tiny muted">Terbit otomatis setelah Tahap 1 &amp; 2 disetujui</div></div>' +
-          F.statusBadge(t3 === 'SIAP' ? 'SIAP' : 'TERKUNCI') + '</div>' +
+          '<div class="tahap ' + (selesai ? 'done' : (t3 === 'MENUNGGU' ? 'now' : 'locked')) + '"><div class="tahap-h">' +
+          '<div class="tahap-n">' + (selesai ? ik('check', 14, 2.6) : '3') + '</div>' +
+          '<div class="grow"><div class="bold">ACC BAAK &amp; Lembar Pengambilan Ijazah</div>' +
+          '<div class="tiny muted">Satu kali verifikasi BAAK atas berkas Tahap 1 &amp; 2</div></div>' +
+          (selesai ? F.statusBadge('SIAP') : (t3 === 'MENUNGGU' ? F.statusBadge('MENUNGGU') : F.statusBadge('TERKUNCI'))) + '</div>' +
           '<div class="tahap-b">' +
-          (t3 === 'SIAP'
+          (selesai
             ? '<div class="notice ok mb2">' + ik('award', 17) + '<span>Selamat! Seluruh persyaratan administrasi kelulusan Anda telah lengkap.</span></div>' +
-            (k.kartuFileId
-              ? '<div class="row-wrap">' +
-              '<button class="btn btn-ghost grow" id="kl-pv-kartu">' + ik('eye', 16) + 'Pratinjau</button>' +
-              '<button class="btn btn-primary grow" id="kl-dl-kartu">' + ik('download', 16) + 'Unduh Lembar Pengambilan Ijazah</button>' +
-              '</div>' : '')
-            : '<div class="notice">' + ik('lock', 17) +
-            '<span>Kartu digital ber-QR otomatis aktif setelah Tahap 1 dan Tahap 2 dinyatakan lolos verifikasi BAAK.</span></div>') +
+              (dokKartu.length
+                ? '<div data-dok-kartu>' + S.Dok.daftar(dokKartu) + '</div>'
+                : (k.kartuFileId
+                  ? '<div class="row-wrap"><button class="btn btn-ghost grow" id="kl-pv-kartu">' + ik('eye', 16) + 'Pratinjau</button>' +
+                    '<button class="btn btn-primary grow" id="kl-dl-kartu">' + ik('download', 16) + 'Unduh Lembar Pengambilan Ijazah</button></div>'
+                  : '<div class="notice warn">' + ik('clock', 17) + '<span>Lembar Pengambilan Ijazah sedang dibuat sistem. Muat ulang dalam beberapa saat.</span></div>'))
+            : (t3 === 'MENUNGGU'
+              ? '<div class="notice warn">' + ik('clock', 17) + '<span>Berkas Tahap 1 &amp; 2 sedang diperiksa BAAK. Estimasi 1–2 hari kerja.</span></div>'
+              : '<div class="notice">' + ik('lock', 17) + '<span>Terbuka setelah berkas Tahap 1 dan Tahap 2 dikirim.</span></div>')) +
           '</div></div>';
       }
 
       var el = document.getElementById('mhsview-kelulusan');
       el.innerHTML = M.kerangka('kelulusan', 'Administrasi Kelulusan',
-        'Selesaikan tiga tahap verifikasi berkas untuk penerbitan Surat Bebas Akademik & pengambilan ijazah fisik.', isi);
+        'Kirim berkas Tahap 1 & 2 sekaligus, lalu BAAK melakukan ACC pada Tahap 3 untuk penerbitan Lembar Pengambilan Ijazah.', isi);
       M.pasangAksiUmum(el);
+      S.Dok.pasang(el.querySelector('[data-dok-penyerahan]'), dokPenyerahan);
+      S.Dok.pasang(el.querySelector('[data-dok-kartu]'), dokKartu);
+      if (!k) return;
 
       var pvKartu = el.querySelector('#kl-pv-kartu');
       var dlKartu = el.querySelector('#kl-dl-kartu');
       if (pvKartu || dlKartu) {
-        var dokKartu = {
+        var dk = {
           nama: 'Lembar Pengambilan Ijazah', fileId: k.kartuFileId, url: k.kartuUrl,
           pratinjau: 'https://drive.google.com/file/d/' + k.kartuFileId + '/preview',
           unduh: 'https://drive.google.com/uc?export=download&id=' + k.kartuFileId
         };
-        if (pvKartu) pvKartu.onclick = function () { S.Dok.pratinjau(dokKartu); };
-        if (dlKartu) dlKartu.onclick = function () { S.Dok.unduh(dokKartu); };
+        if (pvKartu) pvKartu.onclick = function () { S.Dok.pratinjau(dk); };
+        if (dlKartu) dlKartu.onclick = function () { S.Dok.unduh(dk); };
       }
 
+      var ung = {};
       [1, 2].forEach(function (n) {
         var box = el.querySelector('#kl-upload-' + n);
-        if (!box) return;
-        var ung = S.pasangUnggah(box, { kategori: 'kelulusan' });
-        el.querySelector('#kl-kirim-' + n).onclick = function (ev) {
-          if (ung.sedang) return UI.toast('Tunggu proses unggah selesai.', 'warn');
-          if (!ung.fileId) return UI.toast('Unggah berkas terlebih dahulu.', 'error');
-          var data = { tahap: n, fileId: ung.fileId, fileUrl: ung.url };
-          if (n === 2) {
-            data.jurnal = el.querySelector('#kl-jurnal').value.trim();
-            data.link = el.querySelector('#kl-link').value.trim();
-            if (!data.jurnal) return UI.toast('Nama jurnal / lembaga penerbit wajib diisi.', 'error');
-          }
-          UI.sibuk(ev.currentTarget, true, 'Mengirim…');
-          API.kirim('simpanKelulusan', data).then(function (r) {
-            UI.sibuk(ev.currentTarget, false);
-            if (!r.success) return UI.toast(r.message, 'error');
-            UI.toast(r.message, 'ok');
-            M.muat(false);
-          });
-        };
+        if (box) ung[n] = S.pasangUnggah(box, { kategori: 'kelulusan' });
       });
+      var kirim = el.querySelector('#kl-kirim');
+      if (!kirim) return;
+      kirim.onclick = function (ev) {
+        var data = {};
+        if (ung[1]) {
+          if (ung[1].sedang) return UI.toast('Tunggu proses unggah Tahap 1 selesai.', 'warn');
+          if (!ung[1].fileId) return UI.toast('Tahap 1: unggah bukti penyerahan skripsi & bebas perpustakaan.', 'error');
+          data.tahap1 = { fileId: ung[1].fileId, fileUrl: ung[1].url };
+        }
+        if (ung[2]) {
+          var jurnal = el.querySelector('#kl-jurnal').value.trim();
+          if (!jurnal) return UI.toast('Tahap 2: nama jurnal / lembaga penerbit wajib diisi.', 'error');
+          if (ung[2].sedang) return UI.toast('Tunggu proses unggah Tahap 2 selesai.', 'warn');
+          if (!ung[2].fileId) return UI.toast('Tahap 2: unggah LOA atau bukti publikasi.', 'error');
+          data.tahap2 = { jurnal: jurnal, link: el.querySelector('#kl-link').value.trim(), fileId: ung[2].fileId, fileUrl: ung[2].url };
+        }
+        var btn = ev.currentTarget;
+        UI.sibuk(btn, true, 'Mengirim…');
+        API.kirim('simpanKelulusan', data).then(function (r) {
+          UI.sibuk(btn, false);
+          if (!r.success) return UI.toast(r.message, 'error');
+          // Optimistic: status lokal langsung berubah tanpa menunggu muat ulang.
+          for (var key in r.data) if (key !== 'nim') M.D.kelulusan[key] = r.data[key];
+          M.kotor.kelulusan = true; M.render('kelulusan');
+          UI.toast(r.message, 'ok');
+          M.muat(false);
+        });
+      };
     },
 
     kotakUnggahTahap: function (n) {
-      var judul = n === 1 ? 'Unggah Bukti Penyerahan Skripsi &amp; Bebas Pustaka' : 'Unggah Letter of Acceptance (LOA) / Bukti Publikasi';
+      var judul = n === 1 ? 'Unggah Bukti Penyerahan Skripsi &amp; Bebas Perpustakaan' : 'Unggah Letter of Acceptance (LOA) / Bukti Publikasi';
       return (n === 2
         ? '<div class="grid-2"><div class="field"><label for="kl-jurnal">Nama Jurnal / Lembaga Penerbit <span class="req">*</span></label>' +
         '<input class="input" id="kl-jurnal" maxlength="150" placeholder="Contoh: Jurnal Ekonomi & Perbankan Syariah (JEPS) — Sinta 3"></div>' +
@@ -1512,8 +1610,7 @@
         '<div class="upload" id="kl-upload-' + n + '"><input type="file" accept=".pdf,.jpg,.jpeg,.png">' +
         '<div data-info><div style="color:var(--orange-600);line-height:0;margin-bottom:6px">' + ik('upload', 24) + '</div>' +
         '<div class="upload-name">' + judul + '</div>' +
-        '<div class="tiny muted">PDF atau gambar hasil pindai • maksimal ' + S.CFG.MAKS_UNGGAH_MB + ' MB</div></div></div>' +
-        '<button class="btn btn-primary btn-block mt2" id="kl-kirim-' + n + '">' + ik('send', 15) + 'Kirim Berkas Tahap ' + n + '</button>';
+        '<div class="tiny muted">PDF atau gambar hasil pindai • maksimal ' + S.CFG.MAKS_UNGGAH_MB + ' MB</div></div></div>';
     },
 
     /* ==================================================================
@@ -1737,7 +1834,8 @@
               ? '<div class="notice mt1" style="font-size:12.5px">' + ik('clock', 16) +
               '<span>Sedang ditinjau Tim Akademik BAAK. Estimasi selesai 1–2 hari kerja.</span></div>' : '') +
             (r.dokumen && r.dokumen.length
-              ? '<div class="mt2">' + S.Dok.daftar(r.dokumen, true) + '</div>' : '') +
+              ? '<div class="mt2">' + S.Dok.daftar(r.dokumen, true) + '</div>'
+              : (M.sedangDibuat(r) ? '<div class="notice warn mt2">' + ik('clock', 16) + '<span>Dokumen sedang dibuat sistem…</span></div>' : '')) +
             '<div class="row-wrap mt2">' +
             (r.status === 'MENUNGGU' && !r._sementara ? '<button class="btn btn-danger btn-sm" data-batal="' + F.esc(r.id) + '">Batalkan</button>' : '') +
             '<button class="btn btn-ghost btn-sm" data-detail="' + F.esc(r.id) + '">' + ik('list', 14) + 'Lihat Detail</button>' +

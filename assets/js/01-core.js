@@ -10,15 +10,109 @@
   var CFG = global.APP_CONFIG;
 
   /* ======================================================================
-     1. API CLIENT
+     1. API CLIENT — gas-instant-ux-pro
+     • Ukur setiap panggilan (total vs waktu server `ms`) → Perf.table()
+     • Aksi BACA di-retry s.d. 3× (timeout bertahap) — pulih dari cold start
+     • Aksi TULIS membawa reqId unik → aman di-retry tanpa data ganda
+     • Tunggu jaringan pulih bila perangkat luring; respons non-JSON = gagal
      ====================================================================== */
+
+  /** Aksi yang mengubah data (cermin `tulis: true` di registry backend). */
+  var AKSI_TULIS = ('ajukanSurat batalkanPengajuan simpanKelulusan unggahBerkas perbaruiProfil ' +
+    'prosesPengajuan prosesMassal ulangiDokumen terbitkanDokumen cetakUlang simpanPenguji simpanIpk ' +
+    'kirimSkl terbitkanSkPembimbing prosesKelulusan simpanDosenMagang suratTugasDosen simpanDokumen ' +
+    'hapusDokumen aktifkanDokumen simpanNomorDokumen tautkanTemplate simpanPeta hapusPeta simpanDosen ' +
+    'hapusDosen imporDosen simpanProdi simpanAksesMenu unggahAset simpanAppConfig simpanMahasiswa ' +
+    'imporMahasiswa gantiPassword simpanAdmin notifConfigSimpan notifUlangi blastBuat blastStop crmSync ' +
+    'crmSimpan crmBulk crmInteraksi crmImport crmMerge imporJalankan').split(' ');
+
+  /** Aksi yang tidak boleh diulang otomatis (mengirim pesan nyata). */
+  var TANPA_ULANG = ['ujiWa', 'ujiEmail', 'blastProses', 'notifProsesSekarang'];
+
+  /** Aksi berat → batas waktu lebih panjang (ms). */
+  var BATAS_LAMA = {
+    imporJalankan: 340000, imporPindai: 340000, prosesDokumen: 340000, crmSync: 200000,
+    prosesMassal: 200000, terbitkanDokumen: 200000, cetakUlang: 200000, notifProsesSekarang: 200000,
+    blastProses: 150000, waValidasi: 100000, suratTugasDosen: 150000, crmImport: 150000,
+    cetakRekap: 100000, pratinjauDraf: 100000, cetakBlanko: 100000, cetakFormulir: 100000,
+    pratinjauDokumen: 100000, crmEkspor: 100000, simpanIpk: 100000, simpanPenguji: 100000
+  };
+
+  var Perf = {
+    rows: [],
+    add: function (action, total, server, percobaan) {
+      Perf.rows.push({
+        action: action, total: total, server: server == null ? null : server,
+        jaringan: server == null ? null : total - server, percobaan: percobaan || 1, pada: new Date().toLocaleTimeString()
+      });
+      if (Perf.rows.length > 200) Perf.rows.shift();
+    },
+    /** Ketik Perf.table() di console untuk melihat 30 panggilan terakhir. */
+    table: function () { if (window.console && console.table) console.table(Perf.rows.slice(-30)); return Perf.rows.length; }
+  };
+
+  function tunda(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  function buatReqId() {
+    try { if (global.crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (e) { }
+    return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  }
+
+  function tungguOnline(maksMs) {
+    if (typeof navigator === 'undefined' || navigator.onLine !== false) return Promise.resolve();
+    return new Promise(function (resolve) {
+      var t = setTimeout(selesai, maksMs || 20000);
+      function selesai() { clearTimeout(t); global.removeEventListener('online', selesai); resolve(); }
+      global.addEventListener('online', selesai);
+    });
+  }
 
   var API = {
     token: null,
     peran: null,
 
-    /** POST ke GAS. Header text/plain agar tidak memicu preflight CORS. */
-    kirim: function (action, data) {
+    /** Satu percobaan POST ke GAS. Header text/plain agar tidak memicu preflight CORS. */
+    sekali: function (action, data, batasMs, reqId) {
+      var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, batasMs) : null;
+      var body = { action: action, token: API.token || '', data: data || {} };
+      if (reqId) body.reqId = reqId;
+      return fetch(CFG.GAS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(body),
+        signal: ctrl ? ctrl.signal : undefined,
+        redirect: 'follow'
+      }).then(function (res) {
+        if (timer) clearTimeout(timer);
+        if (!res.ok) return { success: false, code: 'NETWORK', message: 'Server sibuk (HTTP ' + res.status + ').', _ulang: true };
+        return res.text().then(function (teks) {
+          try { return JSON.parse(teks); }
+          catch (e) {
+            // Halaman HTML Google = URL salah / izin belum "Anyone" / gangguan sesaat.
+            return {
+              success: false, code: 'BAD_RESPONSE', _ulang: true,
+              message: 'Server tidak mengembalikan JSON. Periksa kembali URL /exec dan pastikan akses deployment disetel "Anyone".'
+            };
+          }
+        });
+      }).catch(function (err) {
+        if (timer) clearTimeout(timer);
+        return {
+          success: false, code: 'NETWORK', _ulang: true,
+          message: (err && err.name === 'AbortError')
+            ? 'Permintaan terlalu lama. Periksa koneksi internet Anda.'
+            : 'Tidak dapat terhubung ke server. Periksa koneksi internet Anda.'
+        };
+      });
+    },
+
+    /**
+     * Kirim permintaan dengan retry cerdas.
+     * opsi: { reqId, timeout, tanpaUlang }
+     */
+    kirim: function (action, data, opsi) {
+      opsi = opsi || {};
       if (!CFG.GAS_URL || CFG.GAS_URL.indexOf('GANTI_DENGAN') === 0) {
         return Promise.resolve({
           success: false,
@@ -26,53 +120,60 @@
           code: 'NO_URL'
         });
       }
+      var tulis = AKSI_TULIS.indexOf(action) >= 0;
+      var reqId = tulis ? (opsi.reqId || buatReqId()) : '';
+      var bolehUlang = !opsi.tanpaUlang && TANPA_ULANG.indexOf(action) < 0;
+      var maksCoba = bolehUlang ? 3 : 1;
+      var batas = opsi.timeout || BATAS_LAMA[action] || CFG.TIMEOUT_MS || 45000;
+      var t0 = Date.now(), coba = 0, prosesUlang = 0;
 
-      var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-      var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, CFG.TIMEOUT_MS) : null;
-
-      return fetch(CFG.GAS_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: action, token: API.token || '', data: data || {} }),
-        signal: ctrl ? ctrl.signal : undefined,
-        redirect: 'follow'
-      })
-        .then(function (res) {
-          if (timer) clearTimeout(timer);
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          return res.text();
-        })
-        .then(function (teks) {
-          try {
-            return JSON.parse(teks);
-          } catch (e) {
-            // GAS mengembalikan halaman HTML bila URL salah atau izin belum "Anyone".
-            return {
-              success: false,
-              code: 'BAD_RESPONSE',
-              message: 'Server tidak mengembalikan JSON. Periksa kembali URL /exec dan pastikan akses deployment disetel "Anyone".'
-            };
+      function jalan() {
+        coba++;
+        // Percobaan pertama aksi baca ringan dibatasi lebih pendek agar cepat pulih dari cold start.
+        var b = (coba === 1 && !tulis && !BATAS_LAMA[action]) ? Math.min(batas, 30000) : batas;
+        return tungguOnline(20000).then(function () { return API.sekali(action, data, b, reqId); }).then(function (r) {
+          r = r || { success: false, code: 'NETWORK', _ulang: true, message: 'Tidak ada respons server.' };
+          // Permintaan yang sama masih dikerjakan server → tunggu lalu ambil hasilnya.
+          if (r.code === 'SEDANG_DIPROSES' && reqId && prosesUlang < 6) {
+            prosesUlang++;
+            return tunda(2500).then(function () { coba--; return jalan(); });
           }
-        })
-        .then(function (json) {
-          if (json && json.code === 'UNAUTHORIZED') UI.sesiHabis();
-          return json;
-        })
-        .catch(function (err) {
-          if (timer) clearTimeout(timer);
-          var pesan = (err && err.name === 'AbortError')
-            ? 'Permintaan terlalu lama. Periksa koneksi internet Anda.'
-            : 'Tidak dapat terhubung ke server. Periksa koneksi internet Anda.';
-          return { success: false, message: pesan, code: 'NETWORK' };
+          if (r._ulang && coba < maksCoba) return tunda(coba * 1200).then(jalan);
+          delete r._ulang;
+          return r;
         });
+      }
+
+      return jalan().then(function (json) {
+        Perf.add(action, Date.now() - t0, json && json.ms, coba);
+        if (json && json.code === 'UNAUTHORIZED') UI.sesiHabis();
+        return json;
+      });
     },
 
     /** Kirim dan tampilkan toast otomatis bila gagal. */
-    aman: function (action, data) {
-      return API.kirim(action, data).then(function (r) {
+    aman: function (action, data, opsi) {
+      return API.kirim(action, data, opsi).then(function (r) {
         if (!r.success) UI.toast(r.message || 'Terjadi kesalahan.', 'error');
         return r;
       });
+    },
+
+    /**
+     * Baca beberapa aksi sekaligus dalam SATU eksekusi server.
+     * calls: [{action, data}] → { action: respons }
+     */
+    batch: function (calls) {
+      return API.kirim('batch', { calls: calls }).then(function (r) {
+        return (r && r.success) ? r.data : {};
+      });
+    },
+
+    /** Bangunkan server (warm-up) tanpa kerja apa pun — menekan cold start. */
+    ping: function () {
+      if (!CFG.GAS_URL || CFG.GAS_URL.indexOf('GANTI_DENGAN') === 0) return Promise.resolve(false);
+      return fetch(CFG.GAS_URL + '?ping=1', { method: 'GET', redirect: 'follow' })
+        .then(function () { return true; }).catch(function () { return false; });
     }
   };
 
@@ -508,10 +609,32 @@
   // Alias ringkas agar potongan markup di bawah senada dengan modul lain.
   var ik = ikon;
 
+  /** base64 → Blob (PDF draf/blanko dikirim server tanpa membuat berkas Drive). */
+  function base64KeBlob(b64, mime) {
+    var bin = atob(b64), n = bin.length, u8 = new Uint8Array(n);
+    for (var i = 0; i < n; i++) u8[i] = bin.charCodeAt(i);
+    return new Blob([u8], { type: mime || 'application/pdf' });
+  }
+
+  function unduhBlob(blob, nama) {
+    var a = document.createElement('a');
+    var url = URL.createObjectURL(blob);
+    a.href = url; a.download = nama || 'dokumen.pdf'; a.style.display = 'none';
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 4000);
+  }
+
   var Dok = {
 
-    /** Unduh langsung tanpa berpindah halaman. */
+    _blobUrl: '',
+
+    /** Unduh langsung tanpa berpindah halaman (berkas Drive maupun PDF base64). */
     unduh: function (dok) {
+      if (dok && dok.base64) {
+        unduhBlob(base64KeBlob(dok.base64, dok.mime), dok.namaBerkas || ((dok.nama || 'dokumen') + '.pdf'));
+        UI.toast('Unduhan dimulai…', 'ok');
+        return;
+      }
       var url = (typeof dok === 'string') ? dok : (dok.unduh || dok.url || '');
       if (!url) { UI.toast('Tautan dokumen belum tersedia.', 'error'); return; }
       // Drive melayani uc?export=download dengan header attachment,
@@ -545,33 +668,64 @@
       };
     },
 
-    /** Pratinjau PDF di dalam modal — tanpa membuka tab baru. */
-    pratinjau: function (dok) {
+    /**
+     * Pratinjau PDF di dalam modal — tanpa membuka tab baru.
+     * opsi.tombol: [{ id, label, kelas, ikon, klik(box) }] → tombol aksi tambahan
+     * (mis. "Setujui" setelah admin memeriksa draf).
+     */
+    pratinjau: function (dok, opsi) {
+      opsi = opsi || {};
       var d = (typeof dok === 'string') ? { pratinjau: dok } : (dok || {});
       var src = d.pratinjau || (d.fileId ? 'https://drive.google.com/file/d/' + d.fileId + '/preview' : '');
+      var lokal = !!d.base64;
+      if (lokal) {
+        if (Dok._blobUrl) { try { URL.revokeObjectURL(Dok._blobUrl); } catch (e) { } }
+        Dok._blobUrl = URL.createObjectURL(base64KeBlob(d.base64, d.mime));
+        src = Dok._blobUrl;
+      }
       if (!src) { UI.toast('Pratinjau dokumen belum tersedia.', 'error'); return; }
+
+      // Peramban HP umumnya tidak dapat menampilkan PDF di dalam halaman.
+      var tanpaViewer = lokal && (navigator.pdfViewerEnabled === false ||
+        (navigator.pdfViewerEnabled === undefined && /Android|iPhone|iPad/i.test(navigator.userAgent)));
+      var tombol = (opsi.tombol || []).map(function (t) {
+        return '<button class="btn ' + (t.kelas || 'btn-primary') + '" id="' + t.id + '">' + (t.ikon ? ik(t.ikon, 15) : '') + F.esc(t.label) + '</button>';
+      }).join('');
 
       UI.modal({
         lebar: true,
         judul: d.nama || 'Pratinjau Dokumen',
-        sub: d.nomor ? ('Nomor: ' + d.nomor) : (d.kode || ''),
+        sub: opsi.sub || (d.nomor ? ('Nomor: ' + d.nomor) : (d.kode || '')),
         isi:
-          '<div class="pratinjau-wrap">' +
-          '<div class="pratinjau-load" id="pv-load"><span class="spinner dark"></span> Memuat dokumen…</div>' +
-          '<iframe id="pv-frame" src="' + F.esc(src) + '" title="Pratinjau dokumen" loading="eager"></iframe>' +
-          '</div>' +
-          '<div class="tiny muted mt1">' + ik('info', 12) +
-          ' Dokumen dimuat langsung dari Google Drive. Bila tampilan kosong, gunakan tombol Unduh.</div>',
+          (opsi.atas || '') +
+          (tanpaViewer
+            ? '<div class="empty" style="padding:28px 10px"><div class="ic">' + ik('file', 26) + '</div>' +
+              '<div class="t">PDF siap dibuka</div><div class="d">Perangkat ini membuka PDF di penampil bawaan. ' +
+              'Ketuk “Buka PDF” untuk memeriksa isi dokumen.</div>' +
+              '<a class="btn btn-soft mt2" href="' + src + '" target="_blank" rel="noopener">' + ik('eye', 15) + 'Buka PDF</a></div>'
+            : '<div class="pratinjau-wrap">' +
+              '<div class="pratinjau-load" id="pv-load"><span class="spinner dark"></span> Memuat dokumen…</div>' +
+              '<iframe id="pv-frame" src="' + F.esc(src) + '" title="Pratinjau dokumen" loading="eager"></iframe>' +
+              '</div>') +
+          '<div class="tiny muted mt1">' + ik('info', 12) + ' ' +
+          (lokal ? (opsi.catatan || 'Pratinjau dibuat langsung oleh server — belum ada berkas yang disimpan atau nomor yang dipakai.')
+            : 'Dokumen dimuat langsung dari Google Drive. Bila tampilan kosong, gunakan tombol Unduh.') + '</div>',
         kaki:
           '<button class="btn btn-ghost" data-tutup>Tutup</button>' +
-          (d.url ? '<a class="btn btn-ghost" href="' + F.esc(d.url) + '" target="_blank" rel="noopener">' + ik('eye', 15) + 'Buka di Drive</a>' : '') +
-          '<button class="btn btn-primary" id="pv-unduh">' + ik('download', 15) + 'Unduh PDF</button>',
+          (d.url && !lokal ? '<a class="btn btn-ghost" href="' + F.esc(d.url) + '" target="_blank" rel="noopener">' + ik('eye', 15) + 'Buka di Drive</a>' : '') +
+          (opsi.tanpaUnduh ? '' : '<button class="btn ' + (tombol ? 'btn-ghost' : 'btn-primary') + '" id="pv-unduh">' + ik('download', 15) + (lokal ? 'Unduh' : 'Unduh PDF') + '</button>') +
+          tombol,
         siap: function (box) {
           var fr = box.querySelector('#pv-frame');
           var ld = box.querySelector('#pv-load');
-          fr.onload = function () { if (ld) ld.style.display = 'none'; };
-          setTimeout(function () { if (ld) ld.style.display = 'none'; }, 6000);
-          box.querySelector('#pv-unduh').onclick = function () { Dok.unduh(d); };
+          if (fr) fr.onload = function () { if (ld) ld.style.display = 'none'; };
+          setTimeout(function () { if (ld) ld.style.display = 'none'; }, lokal ? 1500 : 6000);
+          var un = box.querySelector('#pv-unduh');
+          if (un) un.onclick = function () { Dok.unduh(d); };
+          (opsi.tombol || []).forEach(function (t) {
+            var b = box.querySelector('#' + t.id);
+            if (b && t.klik) b.onclick = function () { t.klik(box, b); };
+          });
         }
       });
     },
@@ -585,7 +739,9 @@
           '<span class="dok-ic">' + ik(d.pakaiNomor === false ? 'file' : 'doc', 16) + '</span>' +
           '<div class="grow" style="min-width:0">' +
           '<div class="dok-nama truncate">' + F.esc(d.nama) + '</div>' +
-          '<div class="tiny mono muted">' + F.esc(d.nomor || 'Tanpa nomor surat') + '</div></div>' +
+          '<div class="tiny mono muted">' + F.esc(d.nomor || 'Tanpa nomor surat') +
+          (d.tampilMahasiswa === false ? ' <span class="badge badge-gray" style="font-family:var(--ff);margin-left:4px">' + ik('lock', 10) + ' Khusus admin</span>' : '') +
+          '</div></div>' +
           '<button class="btn btn-ghost' + k + '" data-pv="' + i + '" title="Pratinjau">' + ik('eye', 14) + '</button>' +
           '<button class="btn btn-soft' + k + '" data-dl="' + i + '" title="Unduh">' + ik('download', 14) + '</button>' +
           '</div>';
@@ -621,29 +777,38 @@
         var wajib = f.wajib ? ' <span class="req">*</span>' : ' <span class="muted">(opsional)</span>';
         var bantuan = f.bantuan ? '<div class="hint">' + F.esc(f.bantuan) + '</div>' : '';
         var kontrol;
+        var nilai = (f.nilai === undefined || f.nilai === null) ? '' : String(f.nilai);
+        var val = nilai ? ' value="' + F.esc(nilai) + '"' : '';
+        function pilih(o) { return nilai && String(o) === nilai ? ' selected' : ''; }
 
         if (f.tipe === 'textarea') {
-          kontrol = '<textarea class="textarea" id="' + id + '" data-dyn="' + F.esc(f.nama) + '" maxlength="1000"></textarea>';
+          kontrol = '<textarea class="textarea" id="' + id + '" data-dyn="' + F.esc(f.nama) + '" maxlength="1000">' + F.esc(nilai) + '</textarea>';
         } else if (f.tipe === 'select' || (f.opsi && f.opsi.length)) {
+          var ops = (f.opsi || []).slice();
+          if (nilai && ops.indexOf(nilai) < 0) ops.unshift(nilai);
           kontrol = '<select class="select" id="' + id + '" data-dyn="' + F.esc(f.nama) + '">' +
             '<option value="">— Pilih —</option>' +
-            (f.opsi || []).map(function (o) { return '<option>' + F.esc(o) + '</option>'; }).join('') +
+            ops.map(function (o) { return '<option' + pilih(o) + '>' + F.esc(o) + '</option>'; }).join('') +
             '</select>';
         } else if (f.tipe === 'dosen' || f.tipe === 'dosen_nidn') {
           var daftar = (opsi.dosen || []).filter(function (d) {
             return f.tipe === 'dosen' || String(d.kategori).toUpperCase() === 'NIDN';
           });
+          var label = daftar.map(function (d) { return d.nama + (d.nidn ? ' (NIDN: ' + d.nidn + ')' : ''); });
+          var cocokNama = '';
+          if (nilai) daftar.forEach(function (d, i) { if (!cocokNama && (label[i] === nilai || d.nama === nilai)) cocokNama = label[i]; });
+          if (nilai && !cocokNama) { label.unshift(nilai); cocokNama = nilai; }
           kontrol = '<select class="select" id="' + id + '" data-dyn="' + F.esc(f.nama) + '">' +
             '<option value="">— Pilih dosen —</option>' +
-            daftar.map(function (d) {
-              return '<option>' + F.esc(d.nama + (d.nidn ? ' (NIDN: ' + d.nidn + ')' : '')) + '</option>';
-            }).join('') + '</select>';
+            label.map(function (l) { return '<option' + (l === cocokNama ? ' selected' : '') + '>' + F.esc(l) + '</option>'; }).join('') + '</select>';
         } else {
           var tipeInput = ({ date: 'date', number: 'number', tel: 'tel', nik: 'text', email: 'email' })[f.tipe] || 'text';
+          // Nilai tanggal dari server sudah berformat Indonesia → tampilkan sebagai teks agar tidak hilang.
+          if (tipeInput === 'date' && nilai && !/^\d{4}-\d{2}-\d{2}$/.test(nilai)) tipeInput = 'text';
           var extra = f.tipe === 'nik' ? ' inputmode="numeric" maxlength="16"'
             : (f.tipe === 'tel' ? ' inputmode="numeric" maxlength="15"' : '');
           kontrol = '<input class="input' + (f.tipe === 'nik' || f.tipe === 'tel' ? ' mono' : '') + '" type="' + tipeInput +
-            '" id="' + id + '" data-dyn="' + F.esc(f.nama) + '"' + extra + '>';
+            '" id="' + id + '" data-dyn="' + F.esc(f.nama) + '"' + extra + val + '>';
         }
 
         return '<div class="field"><label for="' + id + '">' + F.esc(f.label) + wajib + '</label>' +
@@ -780,13 +945,126 @@
   };
 
   /* ======================================================================
-     12. EKSPOR
+     12. XLSX — penulis Excel mini tanpa pustaka (ZIP "store" + SpreadsheetML)
      ====================================================================== */
 
+  var Xlsx = (function () {
+    var CRC = (function () {
+      var t = [];
+      for (var n = 0; n < 256; n++) {
+        var c = n;
+        for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        t[n] = c >>> 0;
+      }
+      return t;
+    })();
+    function crc32(u8) {
+      var c = 0xFFFFFFFF;
+      for (var i = 0; i < u8.length; i++) c = CRC[(c ^ u8[i]) & 0xFF] ^ (c >>> 8);
+      return (c ^ 0xFFFFFFFF) >>> 0;
+    }
+    function utf8(s) { return new TextEncoder().encode(s); }
+    function esc(v) {
+      return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+    }
+    function kolom(i) { var s = ''; i++; while (i > 0) { var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
+
+    function zip(berkas) {
+      var lokal = [], pusat = [], offset = 0;
+      berkas.forEach(function (f) {
+        var nama = utf8(f.nama), data = utf8(f.isi), crc = crc32(data);
+        var h = new DataView(new ArrayBuffer(30));
+        h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true);
+        h.setUint16(8, 0, true); h.setUint16(10, 0, true); h.setUint16(12, 0x21, true);
+        h.setUint32(14, crc, true); h.setUint32(18, data.length, true); h.setUint32(22, data.length, true);
+        h.setUint16(26, nama.length, true); h.setUint16(28, 0, true);
+        lokal.push(new Uint8Array(h.buffer), nama, data);
+        var c = new DataView(new ArrayBuffer(46));
+        c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true);
+        c.setUint16(10, 0, true); c.setUint16(12, 0, true); c.setUint16(14, 0x21, true);
+        c.setUint32(16, crc, true); c.setUint32(20, data.length, true); c.setUint32(24, data.length, true);
+        c.setUint16(28, nama.length, true); c.setUint32(42, offset, true);
+        pusat.push(new Uint8Array(c.buffer), nama);
+        offset += 30 + nama.length + data.length;
+      });
+      var ukPusat = pusat.reduce(function (a, b) { return a + b.length; }, 0);
+      var e = new DataView(new ArrayBuffer(22));
+      e.setUint32(0, 0x06054b50, true); e.setUint16(8, berkas.length, true); e.setUint16(10, berkas.length, true);
+      e.setUint32(12, ukPusat, true); e.setUint32(16, offset, true);
+      return new Blob(lokal.concat(pusat, [new Uint8Array(e.buffer)]),
+        { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    }
+
+    /**
+     * Buat & unduh .xlsx. lembar: [{ nama, judul?, kolom: [...], baris: [[...]] }]
+     * Baris judul (opsional) ditulis tebal di atas tabel.
+     */
+    function unduh(namaFile, lembar) {
+      var sheets = lembar.map(function (L, idx) {
+        var rows = [], r = 1;
+        function baris(nilai, gaya) {
+          var cells = nilai.map(function (v, i) {
+            var ref = kolom(i) + r, s = gaya ? ' s="' + gaya + '"' : '';
+            if (typeof v === 'number' && isFinite(v)) return '<c r="' + ref + '"' + s + '><v>' + v + '</v></c>';
+            return '<c r="' + ref + '" t="inlineStr"' + s + '><is><t xml:space="preserve">' + esc(v == null ? '' : v) + '</t></is></c>';
+          }).join('');
+          rows.push('<row r="' + r + '">' + cells + '</row>'); r++;
+        }
+        if (L.judul) { baris([L.judul], 1); if (L.sub) baris([L.sub]); baris([]); }
+        baris(L.kolom, 2);
+        (L.baris || []).forEach(function (b) { baris(b); });
+        var lebar = L.kolom.map(function (k, i) {
+          var maks = String(k).length;
+          (L.baris || []).forEach(function (b) { maks = Math.max(maks, String(b[i] == null ? '' : b[i]).length); });
+          return '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + Math.min(60, Math.max(6, maks + 2)) + '" customWidth="1"/>';
+        }).join('');
+        return {
+          nama: 'xl/worksheets/sheet' + (idx + 1) + '.xml',
+          isi: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+            '<cols>' + lebar + '</cols><sheetData>' + rows.join('') + '</sheetData></worksheet>'
+        };
+      });
+      var namaLembar = lembar.map(function (L, i) { return esc(String(L.nama || ('Lembar' + (i + 1))).replace(/[\\\/\?\*\[\]:]/g, ' ').substring(0, 31)); });
+      var berkas = [
+        { nama: '[Content_Types].xml', isi: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+          '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>' +
+          '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+          '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+          sheets.map(function (x, i) { return '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'; }).join('') + '</Types>' },
+        { nama: '_rels/.rels', isi: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+          '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+        { nama: 'xl/workbook.xml', isi: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' +
+          namaLembar.map(function (n, i) { return '<sheet name="' + n + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>'; }).join('') + '</sheets></workbook>' },
+        { nama: 'xl/_rels/workbook.xml.rels', isi: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+          sheets.map(function (x, i) { return '<Relationship Id="rId' + (i + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + (i + 1) + '.xml"/>'; }).join('') +
+          '<Relationship Id="rId' + (sheets.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+        { nama: 'xl/styles.xml', isi: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+          '<fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="13"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts>' +
+          '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF16233B"/></patternFill></fill></fills>' +
+          '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
+          '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+          '<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+          '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>' +
+          '<xf numFmtId="0" fontId="2" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs>' +
+          '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>' }
+      ].concat(sheets);
+      unduhBlob(zip(berkas), /\.xlsx$/i.test(namaFile) ? namaFile : namaFile + '.xlsx');
+    }
+
+    return { unduh: unduh };
+  })();
+
+  /* ======================================================================
+     13. EKSPOR
+     ====================================================================== */
+
+  global.Perf = Perf;
+
   global.SIAKAD = {
-    CFG: CFG, API: API, Simpan: Simpan, State: State,
-    F: F, UI: UI, ikon: ikon, Dok: Dok, Form: Form, Csv: Csv,
-    fileKeBase64: fileKeBase64, pasangUnggah: pasangUnggah,
+    CFG: CFG, API: API, Perf: Perf, Simpan: Simpan, State: State,
+    F: F, UI: UI, ikon: ikon, Dok: Dok, Form: Form, Csv: Csv, Xlsx: Xlsx,
+    fileKeBase64: fileKeBase64, pasangUnggah: pasangUnggah, base64KeBlob: base64KeBlob, unduhBlob: unduhBlob,
     debounce: debounce, cocok: cocok
   };
 

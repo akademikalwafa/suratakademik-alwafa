@@ -64,6 +64,8 @@
         if (sesi) Simpan.hapus('token');
         UI.layar('landing');
         document.getElementById('boot').classList.add('hide');
+        // Bangunkan server selagi pengguna mengetik NIM → login terasa instan.
+        if (!window.__PF) API.ping();
       }
 
       // Unduh modul admin di waktu senggang bila pengguna membuka tab Admin.
@@ -100,6 +102,7 @@
       document.addEventListener('visibilitychange', function () {
         if (document.hidden) { terakhirAktif = Date.now(); return; }
         if (Date.now() - terakhirAktif < 120000) return;
+        if (!S.State.peran) { API.ping(); return; }
         App.segarkan();
       });
 
