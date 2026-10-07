@@ -18,10 +18,10 @@
       document.getElementById('login-adm').onsubmit = Landing.masukAdmin;
       document.getElementById('btn-cek-surat').onclick = Landing.dialogVerifikasi;
 
-      // Hanya angka pada NIM & tahun.
+      // NIM: angka, boleh bertitik (22.23.0001). Tahun: hanya angka.
       ['in-nim', 'in-tahun'].forEach(function (id) {
-        var el = document.getElementById(id);
-        el.addEventListener('input', function () { el.value = el.value.replace(/[^\d]/g, ''); });
+        var el = document.getElementById(id), pola = id === 'in-nim' ? /[^\d.\-\/]/g : /[^\d]/g;
+        el.addEventListener('input', function () { var v = el.value.replace(pola, ''); if (v !== el.value) el.value = v; });
       });
 
       // Ingat NIM terakhir agar login berikutnya satu ketukan.

@@ -22,7 +22,7 @@
 
       App._janjiAdmin = new Promise(function (resolve, reject) {
         var s = document.createElement('script');
-        s.src = 'assets/js/04-admin.js';
+        s.src = 'assets/js/04-admin.js?v=' + S.VER;
         s.async = false;
         s.onload = function () { resolve(S.Admin); };
         s.onerror = function () {
@@ -64,17 +64,19 @@
         if (sesi) Simpan.hapus('token');
         UI.layar('landing');
         document.getElementById('boot').classList.add('hide');
-        // Bangunkan server selagi pengguna mengetik NIM → login terasa instan.
-        if (!window.__PF) API.ping();
+        // Bangunkan server + panaskan cache selagi pengguna mengetik NIM → login terasa instan.
+        API.warm('pub');
       }
 
       // Unduh modul admin di waktu senggang bila pengguna membuka tab Admin.
       var tabAdm = document.getElementById('tab-adm');
-      if (tabAdm) tabAdm.addEventListener('mouseenter', function () { App.muatAdmin(); }, { once: true });
-      if (tabAdm) tabAdm.addEventListener('touchstart', function () { App.muatAdmin(); }, { once: true, passive: true });
+      if (tabAdm) tabAdm.addEventListener('mouseenter', function () { App.muatAdmin(); API.warm('admin'); }, { once: true });
+      if (tabAdm) tabAdm.addEventListener('touchstart', function () { App.muatAdmin(); API.warm('admin'); }, { once: true, passive: true });
+      if (tabAdm) tabAdm.addEventListener('click', function () { API.warm('admin'); });
     },
 
     pasangGlobal: function () {
+      S.Aktivitas.init();
       var bg = document.getElementById('modal-bg');
       bg.addEventListener('click', function (e) { if (e.target === bg) UI.tutupModal(); });
       document.addEventListener('keydown', function (e) {
@@ -102,7 +104,7 @@
       document.addEventListener('visibilitychange', function () {
         if (document.hidden) { terakhirAktif = Date.now(); return; }
         if (Date.now() - terakhirAktif < 120000) return;
-        if (!S.State.peran) { API.ping(); return; }
+        if (!S.State.peran) { API.warm('pub'); return; }
         App.segarkan();
       });
 

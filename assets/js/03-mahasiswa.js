@@ -54,12 +54,14 @@
       M.muat(!cache);
     },
 
-    muat: function (tampilkanLoading) {
+    muat: function (tampilkanLoading, segar) {
       UI.penandaSinkron(true);
 
       // Permintaan pertama sudah dikirim skrip pra-ambil di index.html.
       var janji;
-      if (St.prefetchBoot) {
+      if (segar) {
+        janji = API.kirim('bootstrapMahasiswa', { _fresh: true });   // tombol Segarkan
+      } else if (St.prefetchBoot) {
         janji = St.prefetchBoot.then(function (x) { return x || API.kirim('bootstrapMahasiswa'); });
         St.prefetchBoot = null;
       } else {
@@ -93,7 +95,11 @@
       if (!ada) { M._nAntre = 0; return; }
       M._nAntre = (M._nAntre || 0) + 1;
       if (M._nAntre > 12) return;
-      M._tAntre = setTimeout(function () { if (!document.hidden) M.muat(false); }, M._nAntre < 4 ? 6000 : 15000);
+      // Polling adaptif: lebih jarang bila mahasiswa tidak sedang memakai layar.
+      var Akt = S.Aktivitas, idle = Akt && Akt.idle();
+      M._tAntre = setTimeout(function () {
+        if (Akt ? Akt.tampil() : !document.hidden) M.muat(false);
+      }, idle ? 30000 : (M._nAntre < 4 ? 6000 : 15000));
     },
 
     /* ==================================================================
@@ -141,7 +147,7 @@
       bd.onclick = function () { sb.classList.remove('open'); bd.classList.remove('show'); };
       document.getElementById('mhs-keluar').onclick = S.App.keluar;
       document.getElementById('mhs-segarkan').onclick = function () {
-        M.muat(false).then(function () { UI.toast('Data diperbarui.', 'ok'); });
+        M.muat(false, true).then(function () { UI.toast('Data diperbarui.', 'ok'); });
       };
     },
 

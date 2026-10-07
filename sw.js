@@ -11,18 +11,18 @@
      karena data harus selalu terbaru.
    ========================================================================== */
 
-var VERSI = 'siakad-v3.0.0';
+var VERSI = 'siakad-v3.1.0';
 var CANGKANG = [
   './',
   './index.html',
-  './assets/css/style.css',
+  './assets/css/style.css?v=3.1.0',
   './assets/js/00-config.js',
-  './assets/js/01-core.js',
-  './assets/js/02-landing.js',
-  './assets/js/03-mahasiswa.js',
-  './assets/js/04-admin.js',
-  './assets/js/05-app.js',
-  './assets/js/06-admin-modul.js'
+  './assets/js/01-core.js?v=3.1.0',
+  './assets/js/02-landing.js?v=3.1.0',
+  './assets/js/03-mahasiswa.js?v=3.1.0',
+  './assets/js/04-admin.js?v=3.1.0',
+  './assets/js/05-app.js?v=3.1.0',
+  './assets/js/06-admin-modul.js?v=3.1.0'
 ];
 
 self.addEventListener('install', function (e) {

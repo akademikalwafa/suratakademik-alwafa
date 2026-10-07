@@ -8,6 +8,8 @@
   'use strict';
 
   var CFG = global.APP_CONFIG;
+  /** Versi frontend (dipakai untuk cache-busting modul yang dimuat belakangan). */
+  var VER = '3.1.0';
 
   /* ======================================================================
      1. API CLIENT — gas-instant-ux-pro
@@ -48,10 +50,41 @@
       if (Perf.rows.length > 200) Perf.rows.shift();
     },
     /** Ketik Perf.table() di console untuk melihat 30 panggilan terakhir. */
-    table: function () { if (window.console && console.table) console.table(Perf.rows.slice(-30)); return Perf.rows.length; }
+    table: function () { if (window.console && console.table) console.table(Perf.rows.slice(-30)); return Perf.rows.length; },
+    /** Perf.summary() → rata-rata per aksi (jumlah, total, server, jaringan, % dari cache). */
+    summary: function () {
+      var g = {};
+      Perf.rows.forEach(function (r) {
+        var x = g[r.action] || (g[r.action] = { aksi: r.action, jumlah: 0, total: 0, server: 0, jaringan: 0, cache: 0 });
+        x.jumlah++; x.total += r.total; x.server += r.server || 0; x.jaringan += r.jaringan || 0; if (r.cache) x.cache++;
+      });
+      var out = Object.keys(g).map(function (k) {
+        var x = g[k];
+        return { aksi: x.aksi, jumlah: x.jumlah, rataTotal: Math.round(x.total / x.jumlah), rataServer: Math.round(x.server / x.jumlah),
+          rataJaringan: Math.round(x.jaringan / x.jumlah), dariCache: Math.round(x.cache * 100 / x.jumlah) + '%' };
+      });
+      if (window.console && console.table) console.table(out);
+      return out;
+    }
+  };
+
+  /** Penanda aktivitas pengguna → polling melambat saat layar ditinggal (gas-scale-turbo · 4.8). */
+  var Aktivitas = {
+    at: Date.now(),
+    init: function () {
+      ['pointerdown', 'keydown', 'wheel', 'touchstart', 'focus'].forEach(function (ev) {
+        global.addEventListener(ev, function () { Aktivitas.at = Date.now(); }, { passive: true });
+      });
+    },
+    idle: function () { return Date.now() - Aktivitas.at > 120000; },
+    tampil: function () { return typeof document === 'undefined' || document.visibilityState !== 'hidden'; }
   };
 
   function tunda(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  /* Permintaan BACA identik yang sedang berjalan ditumpangi (tidak dikirim dua kali).
+     Epoch tulis mencegah baca SESUDAH simpan menumpang baca lama yang sudah basi. */
+  var _sedangBaca = {}, _epochTulis = 0;
 
   function buatReqId() {
     try { if (global.crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (e) { }
@@ -112,6 +145,17 @@
      * opsi: { reqId, timeout, tanpaUlang }
      */
     kirim: function (action, data, opsi) {
+      if (AKSI_TULIS.indexOf(action) >= 0) { _epochTulis++; return API.kirimLangsung(action, data, opsi); }
+      var kunci = _epochTulis + '|' + action + '|' + (API.token || '') + '|' + JSON.stringify(data || {});
+      if (_sedangBaca[kunci]) return _sedangBaca[kunci];
+      var janji = API.kirimLangsung(action, data, opsi);
+      _sedangBaca[kunci] = janji;
+      var lepas = function () { delete _sedangBaca[kunci]; };
+      janji.then(lepas, lepas);
+      return janji;
+    },
+
+    kirimLangsung: function (action, data, opsi) {
       opsi = opsi || {};
       if (!CFG.GAS_URL || CFG.GAS_URL.indexOf('GANTI_DENGAN') === 0) {
         return Promise.resolve({
@@ -146,10 +190,14 @@
 
       return jalan().then(function (json) {
         Perf.add(action, Date.now() - t0, json && json.ms, coba);
+        if (json && json.cached) Perf.rows[Perf.rows.length - 1].cache = true;
         if (json && json.code === 'UNAUTHORIZED') UI.sesiHabis();
         return json;
       });
     },
+
+    /** Nomor urut aksi tulis di tab ini — salinan lokal lebih tua dari tulis terakhir dianggap basi. */
+    epoch: function () { return _epochTulis; },
 
     /** Kirim dan tampilkan toast otomatis bila gagal. */
     aman: function (action, data, opsi) {
@@ -169,10 +217,57 @@
       });
     },
 
+    /**
+     * Penggabung batch otomatis: beberapa aksi BACA yang diminta pada detik yang
+     * sama dikirim dalam SATU eksekusi server (aksi 'batch'). Hasil tiap aksi
+     * dikembalikan ke pemanggilnya masing-masing.
+     */
+    antre: function (action, data) {
+      return new Promise(function (resolve) {
+        if (!API._q) { API._q = []; setTimeout(API._kirimAntre, 0); }
+        API._q.push({ action: action, data: data || {}, resolve: resolve });
+      });
+    },
+    _kirimAntre: function () {
+      var q = API._q || []; API._q = null;
+      var unik = {}, daftar = [];
+      q.forEach(function (x) {
+        var k = x.action + '|' + JSON.stringify(x.data);
+        if (!unik[k]) { unik[k] = []; daftar.push(x); }
+        unik[k].push(x.resolve);
+      });
+      function bagikan(x, r) { unik[x.action + '|' + JSON.stringify(x.data)].forEach(function (f) { f(r); }); }
+      // aksi sama dengan data berbeda tidak dapat digabung (batch dikunci per nama aksi)
+      var dipakai = {}, gabung = [], sendiri = [];
+      daftar.forEach(function (x) { if (dipakai[x.action] || gabung.length >= 8) sendiri.push(x); else { dipakai[x.action] = 1; gabung.push(x); } });
+      sendiri.forEach(function (x) { API.kirim(x.action, x.data).then(function (r) { bagikan(x, r); }); });
+      if (gabung.length === 1) { API.kirim(gabung[0].action, gabung[0].data).then(function (r) { bagikan(gabung[0], r); }); return; }
+      if (!gabung.length) return;
+      API.kirim('batch', { calls: gabung.map(function (x) { return { action: x.action, data: x.data }; }) }).then(function (r) {
+        gabung.forEach(function (x) {
+          var hasil = r && r.success && r.data ? r.data[x.action] : null;
+          if (hasil) bagikan(x, hasil);
+          else API.kirim(x.action, x.data).then(function (r2) { bagikan(x, r2); });   // cadangan: kirim sendiri
+        });
+      });
+    },
+
     /** Bangunkan server (warm-up) tanpa kerja apa pun — menekan cold start. */
-    ping: function () {
+    ping: function () { return API.warm('pub'); },
+
+    /**
+     * Panaskan server + cache (GET ?w=pub|admin) — maks. 1× per 4 menit per lingkup.
+     * Backend lama (tanpa ?w) tetap menjawab, jadi aman dipakai lintas versi.
+     */
+    warm: function (lingkup) {
       if (!CFG.GAS_URL || CFG.GAS_URL.indexOf('GANTI_DENGAN') === 0) return Promise.resolve(false);
-      return fetch(CFG.GAS_URL + '?ping=1', { method: 'GET', redirect: 'follow' })
+      lingkup = lingkup === 'admin' ? 'admin' : 'pub';
+      try {
+        var k = 'siakad:warm_' + lingkup, t = parseInt(sessionStorage.getItem(k), 10) || 0;
+        if (Date.now() - t < 240000) return Promise.resolve(false);
+        sessionStorage.setItem(k, String(Date.now()));
+      } catch (e) { }
+      return fetch(CFG.GAS_URL + '?w=' + lingkup, { method: 'GET', redirect: 'follow', mode: 'no-cors' })
         .then(function () { return true; }).catch(function () { return false; });
     }
   };
@@ -1062,7 +1157,7 @@
   global.Perf = Perf;
 
   global.SIAKAD = {
-    CFG: CFG, API: API, Perf: Perf, Simpan: Simpan, State: State,
+    CFG: CFG, VER: VER, API: API, Perf: Perf, Aktivitas: Aktivitas, Simpan: Simpan, State: State,
     F: F, UI: UI, ikon: ikon, Dok: Dok, Form: Form, Csv: Csv, Xlsx: Xlsx,
     fileKeBase64: fileKeBase64, pasangUnggah: pasangUnggah, base64KeBlob: base64KeBlob, unduhBlob: unduhBlob,
     debounce: debounce, cocok: cocok

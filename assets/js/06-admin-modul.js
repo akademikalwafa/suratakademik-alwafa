@@ -43,8 +43,19 @@
     var kunci = 'adm_mod_' + action;
     var c = opsi.tanpaCache ? null : Simpan.get(kunci);
     if (c) render(c, true);
-    return API.kirim(action, data || {}).then(function (r) {
+    // Kesegaran (gas-scale-turbo · 4.5): salinan < 30 dtk dan belum ada aksi simpan
+    // sesudahnya → tidak perlu ke server. Sesudah tombol Segarkan → baca ulang (_fresh).
+    var Adm = S.Admin || {}, epLokal = Adm.epochLokal || {};
+    var paksa = !!(Adm.segarSub && Adm.segarSub[action]);
+    var ep = epLokal[kunci];
+    if (c && !paksa && API.epoch && ep === API.epoch() && Simpan.umur(kunci) < 30000) {
+      return Promise.resolve({ success: true, data: c, cached: true });
+    }
+    var epKirim = API.epoch ? API.epoch() : 0;
+    return API.kirim(action, Object.assign({}, data || {}, paksa ? { _fresh: true } : {})).then(function (r) {
       if (!r.success) { if (!c) UI.toast(r.message, 'error'); return r; }
+      if (Adm.segarSub) delete Adm.segarSub[action];
+      epLokal[kunci] = epKirim;
       var lama = c ? JSON.stringify(c) : '';
       Simpan.set(kunci, r.data);
       if (JSON.stringify(r.data) !== lama) render(r.data, false);

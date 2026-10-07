@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://drive.google.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
-<link rel="stylesheet" href="assets/css/style.css">
+<link rel="stylesheet" href="assets/css/style.css?v=3.1.0">
 <!-- Font dimuat non-blocking agar teks tampil seketika memakai font sistem. -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
       media="print" onload="this.media='all'">
@@ -90,8 +90,8 @@
                 <label for="in-nim">Nomor Induk Mahasiswa (NIM) <span class="req">*</span></label>
                 <div class="input-icon">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M7 10h4M7 14h7"/></svg>
-                  <input class="input" id="in-nim" name="nim" inputmode="numeric" autocomplete="username"
-                         placeholder="Contoh: 20210801042" maxlength="20" required>
+                  <input class="input" id="in-nim" name="nim" inputmode="decimal" autocomplete="username"
+                         placeholder="Contoh: 20210801042 atau 22.23.0001" maxlength="30" required>
                 </div>
               </div>
               <div class="field">
@@ -324,10 +324,10 @@
 })();
 </script>
 
-<script src="assets/js/01-core.js"></script>
-<script src="assets/js/02-landing.js"></script>
-<script src="assets/js/03-mahasiswa.js"></script>
-<script src="assets/js/05-app.js"></script>
+<script src="assets/js/01-core.js?v=3.1.0"></script>
+<script src="assets/js/02-landing.js?v=3.1.0"></script>
+<script src="assets/js/03-mahasiswa.js?v=3.1.0"></script>
+<script src="assets/js/05-app.js?v=3.1.0"></script>
 
 <script>
 /* Service worker: cangkang aplikasi disimpan di perangkat sehingga kunjungan

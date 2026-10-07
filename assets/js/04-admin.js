@@ -47,11 +47,16 @@
     { k: 'log', n: 'Log Aktivitas', i: 'list' }
   ];
 
+  // View yang memuat datanya sendiri (SWR per menu) — tidak digambar ulang ketika
+  // data dashboard berubah, agar pencarian & filter admin tidak ter-reset.
+  var VIEW_MANDIRI = { mahasiswa: 1, log: 1 };
+
   var A = {
 
     siap: false,
     aktif: 'ringkasan',
     kotor: {},
+    epochLokal: {},   // salinan lokal adm_mod_* → epoch tulis saat diambil
     D: null,
     pilih: {},   // id pengajuan terpilih per antrean
     chart: {},
@@ -76,15 +81,16 @@
       A.muat();
     },
 
-    muat: function () {
+    muat: function (segar) {
       UI.penandaSinkron(true);
 
       var janji;
-      if (S.State.prefetchBoot) {
+      if (S.State.prefetchBoot && !segar) {
         janji = S.State.prefetchBoot.then(function (x) { return x || API.kirim('bootstrapAdmin'); });
         S.State.prefetchBoot = null;
       } else {
-        janji = API.kirim('bootstrapAdmin');
+        // segar = tombol Segarkan → server membaca ulang spreadsheet (v3.1 · _fresh)
+        janji = API.kirim('bootstrapAdmin', segar ? { _fresh: true } : {});
       }
 
       return janji.then(function (r) {
@@ -107,6 +113,43 @@
       });
     },
 
+    /** Label kelas mahasiswa (hanya identitas admin — tidak tercetak di surat). */
+    labelKelas: function (k) {
+      k = String(k || '').toUpperCase();
+      return k === 'REGULER' ? 'Reguler' : k === 'HYBRID' ? 'Hybrid' : '';
+    },
+    badgeKelas: function (k) {
+      var l = A.labelKelas(k);
+      if (!l) return '<span class="tiny muted">—</span>';
+      return '<span class="badge ' + (l === 'Hybrid' ? 'badge-blue' : 'badge-gray') + '">' + l + '</span>';
+    },
+
+    /**
+     * SWR sub-menu (Data Mahasiswa, Log): tampilkan salinan lokal SEKETIKA, lalu ambil
+     * dari server hanya bila salinan lebih tua dari `segarMs` (0 = selalu ke server);
+     * gambar ulang hanya bila datanya berubah.
+     */
+    swrSub: function (action, data, gambar, segarMs) {
+      var kunci = 'adm_mod_' + action;
+      var lokal = Simpan.get(kunci), umur = Simpan.umur(kunci);
+      // Setelah tombol Segarkan: tiap sub-menu dibaca ulang dari spreadsheet SEKALI (_fresh).
+      var paksa = !!(A.segarSub && A.segarSub[action]);
+      // Salinan dianggap segar hanya bila tidak ada aksi simpan sesudah salinan dibuat.
+      var ep = A.epochLokal[kunci];
+      if (lokal) gambar(lokal, true);
+      if (lokal && segarMs !== 0 && umur < (segarMs || 30000) && !paksa && ep === API.epoch()) return Promise.resolve(lokal);
+      var epKirim = API.epoch();
+      var tanda = lokal ? JSON.stringify(lokal) : '';
+      return API.kirim(action, Object.assign({}, data || {}, paksa ? { _fresh: true } : {})).then(function (r) {
+        if (!r.success) { if (!lokal) UI.toast(r.message, 'error'); return lokal; }
+        if (A.segarSub) delete A.segarSub[action];
+        A.epochLokal[kunci] = epKirim;
+        Simpan.set(kunci, r.data);
+        if (JSON.stringify(r.data) !== tanda) gambar(r.data, false);
+        return r.data;
+      });
+    },
+
     /**
      * PDF hasil approval dibuat di antrean server. Selama masih ada antrean,
      * panel memicu pemrosesan & menyegarkan sendiri — admin tidak perlu menunggu.
@@ -121,7 +164,7 @@
       if (!ada) { A._nAntre = 0; return; }
       A._nAntre = (A._nAntre || 0) + 1;
       if (A._nAntre > 10) return;
-      A._tAntre = setTimeout(function () { A.prosesLatar(); }, 1500);
+      A._tAntre = setTimeout(function () { if (S.Aktivitas.tampil()) A.prosesLatar(); }, S.Aktivitas.idle() ? 8000 : 1500);
     },
 
     /** Picu pembuatan PDF di server (tanpa menahan antarmuka), lalu segarkan data. */
@@ -140,10 +183,14 @@
     /** Prefetch data modul tambahan saat senggang — 1 panggilan batch. */
     prefetchModul: function () {
       var jalan = function () {
-        API.batch([{ action: 'notifConfig' }, { action: 'blastList' }, { action: 'crmList' }]).then(function (res) {
+        var ep = API.epoch();
+        // 1 eksekusi server untuk 6 menu sekunder (gas-scale-turbo · 4.4)
+        API.batch([{ action: 'muatMahasiswa' }, { action: 'muatLog', data: { batas: 400 } }, { action: 'suratTugasTerbit' },
+          { action: 'notifConfig' }, { action: 'blastList' }, { action: 'crmList' }]).then(function (res) {
           Object.keys(res || {}).forEach(function (k) {
-            if (res[k] && res[k].success) Simpan.set('adm_mod_' + k, res[k].data);
+            if (res[k] && res[k].success) { Simpan.set('adm_mod_' + k, res[k].data); A.epochLokal['adm_mod_' + k] = ep; }
           });
+          if (res && res.suratTugasTerbit && res.suratTugasTerbit.success && !A.stTerbit) A.stTerbit = res.suratTugasTerbit.data;
         });
       };
       if (window.requestIdleCallback) window.requestIdleCallback(jalan, { timeout: 5000 });
@@ -209,7 +256,14 @@
       bd.onclick = function () { sb.classList.remove('open'); bd.classList.remove('show'); };
       document.getElementById('adm-keluar').onclick = S.App.keluar;
       document.getElementById('adm-segarkan').onclick = function () {
-        A.muat().then(function () { UI.toast('Data antrean diperbarui.', 'ok'); });
+        // menu lain diambil segar (_fresh) saat dibuka berikutnya
+        A.segarSub = { muatMahasiswa: 1, muatLog: 1, suratTugasTerbit: 1, crmList: 1, blastList: 1, notifConfig: 1 };
+        A.muat(true).then(function () {
+          UI.toast('Data dibaca ulang dari spreadsheet.', 'ok');
+          // menu yang memuat datanya sendiri dibaca ulang saat dibuka berikutnya
+          ['mahasiswa', 'log', 'dosen_magang', 'crm', 'notifikasi'].forEach(function (k) { A.kotor[k] = true; });
+          A.render(A.aktif);
+        });
       };
     },
 
@@ -259,7 +313,9 @@
 
       // Tandai semua view perlu digambar ulang; hanya view aktif yang
       // benar-benar digambar sekarang → sinkronisasi tidak menahan antarmuka.
-      NAV.forEach(function (m) { if (m.k) A.kotor[m.k] = true; });
+      // View yang memuat datanya sendiri (Data Mahasiswa, Log) tidak ikut digambar ulang
+      // — pencarian/filter admin tidak ter-reset dan tidak memicu baca ulang server.
+      NAV.forEach(function (m) { if (m.k && !(VIEW_MANDIRI[m.k] && A.kotor[m.k] === false)) A.kotor[m.k] = true; });
       A.render(A.aktif || 'ringkasan');
     },
 
@@ -797,7 +853,8 @@
         '<div class="ms"><div class="l">Status Akademik</div><div class="v">Semester ' + r.semester + ' • Aktif</div></div>' +
         '<div class="ms"><div class="l">Program Studi</div><div class="v" style="font-size:12.5px">' + F.esc(r.prodi) + '</div></div>' +
         '<div class="ms"><div class="l">NIM</div><div class="v mono">' + F.esc(r.nim) + '</div></div>' +
-        '<div class="ms"><div class="l">Angkatan</div><div class="v">' + F.esc(r.tahunMasuk) + '</div></div>' +
+        '<div class="ms"><div class="l">Angkatan • Kelas</div><div class="v">' + F.esc(r.tahunMasuk) +
+        (r.kelas ? ' • ' + A.labelKelas(r.kelas) : '') + '</div></div>' +
         '</div>';
 
       // Rincian data pengajuan
@@ -1453,7 +1510,7 @@
           (k.tahap3Status === 'SIAP' ? 'Tahap 3 Di-ACC' : (bisaAcc ? 'Menunggu ACC' : 'Menunggu Berkas')) + '</span>' +
           '<span class="tiny mono" style="color:rgba(255,255,255,.55)">' + F.esc(k.nim) + '</span></div>' +
           '<div class="t mt1">' + F.esc(k.nama) + '</div>' +
-          '<div class="s">' + F.esc(k.prodi) + ' • Angkatan ' + F.esc(k.tahunMasuk) + '</div></div>' +
+          '<div class="s">' + F.esc(k.prodi) + ' • Angkatan ' + F.esc(k.tahunMasuk) + (k.kelas ? ' • Kelas ' + A.labelKelas(k.kelas) : '') + '</div></div>' +
           '<div class="detail-body">' +
           '<div class="notice mb2" style="font-size:12.5px">' + ik('book', 16) +
           '<span><b>Judul Skripsi Final:</b> ' + F.esc(k.judulFinal || '-') + '</span></div>' +
@@ -1740,10 +1797,17 @@
 
       gambarTabel();
       gambarRekap();
-      if (!A.stTerbit) {
-        API.kirim('suratTugasTerbit', {}).then(function (res) {
+      var paksaST = !!(A.segarSub && A.segarSub.suratTugasTerbit);
+      if (!A.stTerbit || paksaST) {
+        if (!A.stTerbit) {                       // salinan lokal dulu (hasil prefetch)
+          var lokST = Simpan.get('adm_mod_suratTugasTerbit');
+          if (lokST) { A.stTerbit = lokST; gambarRekap(); }
+        }
+        API.kirim('suratTugasTerbit', paksaST ? { _fresh: true } : {}).then(function (res) {
           if (!res.success) return;
+          if (A.segarSub) delete A.segarSub.suratTugasTerbit;
           A.stTerbit = res.data || {};
+          Simpan.set('adm_mod_suratTugasTerbit', A.stTerbit);
           if (document.getElementById('admview-dosen_magang') === el) gambarRekap();
         });
       }
@@ -1888,7 +1952,7 @@
       if (A._janjiModul) return A._janjiModul;
       A._janjiModul = new Promise(function (resolve, reject) {
         var sc = document.createElement('script');
-        sc.src = 'assets/js/06-admin-modul.js';
+        sc.src = 'assets/js/06-admin-modul.js?v=' + S.VER;
         sc.onload = function () { resolve(S.AdminModul); };
         sc.onerror = function () { A._janjiModul = null; reject(new Error('Periksa koneksi lalu buka menu ini kembali.')); };
         document.head.appendChild(sc);
@@ -1909,32 +1973,37 @@
         '<button class="btn btn-ghost btn-sm" id="mh-template">' + ik('download', 14) + 'Template Impor</button>' +
         '<button class="btn btn-ghost btn-sm" id="mh-impor">' + ik('upload', 14) + 'Impor CSV</button>' +
         '<button class="btn btn-primary btn-sm" id="mh-tambah">' + ik('plus', 14) + 'Tambah Mahasiswa</button></div></div>' +
-        '<div class="card"><div class="card-body" style="padding:14px 16px;border-bottom:1px solid var(--line)">' +
-        '<div class="input-icon">' + ik('search', 16) + '<input class="input" id="mh-cari" placeholder="Cari NIM, nama, atau program studi…"></div></div>' +
+        '<div class="card"><div class="card-body row-wrap" style="padding:14px 16px;border-bottom:1px solid var(--line);gap:10px">' +
+        '<div class="input-icon" style="flex:1;min-width:200px">' + ik('search', 16) + '<input class="input" id="mh-cari" placeholder="Cari NIM, nama, atau program studi…"></div>' +
+        '<select class="select" id="mh-kelas" style="width:auto;min-width:150px" title="Saring berdasarkan kelas">' +
+        '<option value="">Semua Kelas</option><option value="REGULER">Reguler</option>' +
+        '<option value="HYBRID">Hybrid</option><option value="-">Belum diatur</option></select></div>' +
         '<div id="mh-tabel"><div class="card-body">' + UI.skeleton(4, 44) + '</div></div></div>';
 
-      var data = [], kueri = '';
+      var data = [], kueri = '', saringKelas = '';
 
-      function muat() {
-        API.kirim('muatMahasiswa').then(function (r) {
-          if (!r.success) return UI.toast(r.message, 'error');
-          data = r.data;
-          gambar();
-        });
+      // SWR: tampil seketika dari salinan lokal; server hanya bila salinan > 30 dtk
+      // (segarMs 0 = selalu tanya server, dipakai sesudah simpan/impor).
+      function muat(segarMs) {
+        return A.swrSub('muatMahasiswa', {}, function (d) { data = d || []; gambar(); }, segarMs === 0 ? 0 : 30000);
       }
 
       function gambar() {
-        var f = data.filter(function (x) { return S.cocok(x, kueri, ['nim', 'nama', 'prodi', 'prodiKode']); });
+        var f = data.filter(function (x) {
+          if (saringKelas === '-' ? !!x.kelas : (saringKelas && x.kelas !== saringKelas)) return false;
+          return S.cocok(x, kueri, ['nim', 'nama', 'prodi', 'prodiKode']);
+        });
         var box = el.querySelector('#mh-tabel');
         if (!f.length) { box.innerHTML = '<div class="card-body">' + UI.kosong('Tidak Ada Data', 'Belum ada mahasiswa yang cocok.', 'users') + '</div>'; return; }
         box.innerHTML = '<div class="table-wrap"><table class="tbl"><thead><tr>' +
-          '<th>NIM</th><th>Nama</th><th>Program Studi</th><th class="center">Angkatan</th>' +
+          '<th>NIM</th><th>Nama</th><th>Program Studi</th><th class="center">Angkatan</th><th class="center">Kelas</th>' +
           '<th class="center">Smt</th><th>Kontak</th><th class="center">Status</th><th></th></tr></thead><tbody>' +
           f.slice(0, 400).map(function (x) {
             return '<tr><td class="mono">' + F.esc(x.nim) + '</td>' +
               '<td class="bold">' + F.esc(x.nama) + '</td>' +
               '<td>' + F.esc(x.prodi) + '</td>' +
               '<td class="center">' + F.esc(x.tahunMasuk) + '</td>' +
+              '<td class="center">' + A.badgeKelas(x.kelas) + '</td>' +
               '<td class="center">' + x.semester + '</td>' +
               '<td class="mono small">' + F.esc(x.noWa || '-') + '</td>' +
               '<td class="center"><span class="badge ' + (x.statusAktif ? 'badge-green' : 'badge-gray') + '">' +
@@ -1961,7 +2030,8 @@
           isi:
             '<div class="grid-2">' +
             '<div class="field"><label>NIM <span class="req">*</span></label>' +
-            '<input class="input mono" id="fm-nim" maxlength="20" value="' + F.esc(m.nim || '') + '"></div>' +
+            '<input class="input mono" id="fm-nim" maxlength="30" inputmode="decimal" placeholder="20210801042 / 22.23.0001" value="' + F.esc(m.nim || '') + '">' +
+            '<div class="hint tiny muted">Boleh bertitik, mis. 22.23.0001</div></div>' +
             '<div class="field"><label>Tahun Masuk <span class="req">*</span></label>' +
             '<input class="input mono" id="fm-th" maxlength="4" value="' + F.esc(m.tahunMasuk || '') + '"></div></div>' +
             '<div class="field"><label>Nama Lengkap <span class="req">*</span></label>' +
@@ -1972,6 +2042,11 @@
               return '<option value="' + F.esc(p.id) + '"' + (m.prodiId === p.id ? ' selected' : '') + '>' +
                 F.esc(p.jenjang + ' ' + p.nama) + '</option>';
             }).join('') + '</select></div>' +
+            '<div class="field"><label>Kelas</label><select class="select" id="fm-kelas">' +
+            '<option value="">— Belum diatur —</option>' +
+            '<option value="REGULER"' + (m.kelas === 'REGULER' ? ' selected' : '') + '>Reguler</option>' +
+            '<option value="HYBRID"' + (m.kelas === 'HYBRID' ? ' selected' : '') + '>Hybrid</option></select>' +
+            '<div class="hint tiny muted">Hanya identitas untuk admin — tidak tercetak pada surat.</div></div>' +
             '<div class="grid-2">' +
             '<div class="field"><label>No. WhatsApp</label><input class="input mono" id="fm-wa" maxlength="15" value="' + F.esc(m.noWa || '') + '"></div>' +
             '<div class="field"><label>Email</label><input class="input" id="fm-email" maxlength="120" value="' + F.esc(m.email || '') + '"></div></div>' +
@@ -1987,13 +2062,14 @@
                 nama: box.querySelector('#fm-nama').value.trim(),
                 tahunMasuk: box.querySelector('#fm-th').value.trim(),
                 prodiId: box.querySelector('#fm-prodi').value,
+                kelas: box.querySelector('#fm-kelas').value,
                 noWa: box.querySelector('#fm-wa').value.trim(),
                 email: box.querySelector('#fm-email').value.trim(),
                 statusAktif: box.querySelector('#fm-aktif').checked
               }).then(function (r) {
                 UI.sibuk(ev.currentTarget, false);
                 if (!r.success) return UI.toast(r.message, 'error');
-                UI.tutupModal(); UI.toast(r.message, 'ok'); muat();
+                UI.tutupModal(); UI.toast(r.message, 'ok'); muat(0);
               });
             };
           }
@@ -2003,7 +2079,8 @@
       el.querySelector('#mh-template').onclick = function () { A.unduhTemplate('mahasiswa'); };
       el.querySelector('#mh-tambah').onclick = function () { dialogMahasiswa(null); };
       el.querySelector('#mh-cari').addEventListener('input', S.debounce(function (e) { kueri = e.target.value; gambar(); }, 200));
-      el.querySelector('#mh-impor').onclick = function () { A.dialogImpor('mahasiswa', muat); };
+      el.querySelector('#mh-kelas').onchange = function (e) { saringKelas = e.target.value; gambar(); };
+      el.querySelector('#mh-impor').onclick = function () { A.dialogImpor('mahasiswa', function () { muat(0); }); };
       muat();
     },
 
@@ -2021,21 +2098,24 @@
         judul: 'Impor Data Mahasiswa',
         aksi: 'imporMahasiswa',
         berkas: 'template-impor-mahasiswa.csv',
-        kolom: ['nim', 'nama', 'tahunMasuk', 'prodi', 'noWa', 'email'],
+        kolom: ['nim', 'nama', 'tahunMasuk', 'prodi', 'kelas', 'noWa', 'email'],
         wajib: ['nim', 'nama', 'tahunMasuk'],
         contoh: [
-          ['20240801001', 'Ahmad Zaki Mubarak', '2024', 'HES', '081234567890', 'zaki@mail.com'],
-          ['20240802002', 'Siti Nurhaliza', '2024', 'HKI', '081298765432', 'siti@mail.com']
+          ['20240801001', 'Ahmad Zaki Mubarak', '2024', 'HES', 'Reguler', '081234567890', 'zaki@mail.com'],
+          ['22.23.0002', 'Siti Nurhaliza', '2022', 'HKI', 'Hybrid', '081298765432', 'siti@mail.com']
         ],
         alias: {
           nim: ['nim', 'nomorindukmahasiswa', 'no.induk', 'noinduk'],
           nama: ['nama', 'namalengkap', 'namamahasiswa'],
           tahunMasuk: ['tahunmasuk', 'angkatan', 'tahun', 'thmasuk'],
           prodi: ['prodi', 'kodeprodi', 'prodikode', 'programstudi', 'jurusan'],
+          kelas: ['kelas', 'jeniskelas', 'kelasperkuliahan', 'tipekelas'],
           noWa: ['nowa', 'wa', 'whatsapp', 'nohp', 'hp', 'telepon', 'notelepon'],
           email: ['email', 'surel', 'e-mail', 'emailmahasiswa']
         },
         catatan: 'Kolom <b>prodi</b> boleh diisi kode (HES) maupun nama lengkap program studi. ' +
+          '<b>NIM</b> boleh bertitik, mis. <span class="mono">22.23.0001</span> (format kolom Teks di Excel agar titik tidak hilang). ' +
+          'Kolom <b>kelas</b> diisi <b>Reguler</b> atau <b>Hybrid</b> — hanya untuk identitas admin, tidak tercetak di surat; kosongkan bila belum diketahui. ' +
           'Baris dengan NIM yang sudah terdaftar akan <b>diperbarui</b>, bukan diduplikasi.'
       },
       dosen: {
@@ -3073,6 +3153,9 @@
         C.teks(cfg, 'BATAS_MAGANG', 'Batas Pengajuan Magang',
           'Menu Magang &amp; Konfirmasi Magang tertutup otomatis setelah tanggal ini.', 'date') +
         C.teks(cfg, 'MASA_BERLAKU_SURAT_AKTIF', 'Masa Berlaku Surat Aktif (bulan)', '', 'number') +
+        C.teks(cfg, 'SIDANG_TANPA_SEMPRO_ANGKATAN', 'Angkatan Langsung Sidang Skripsi (tanpa Sempro)',
+          'Mahasiswa angkatan ini dapat membuka menu Sidang Skripsi tanpa SK Pembimbing dari alur Seminar Proposal. ' +
+          'Pisahkan dengan koma, mis. <span class="mono">2021,2022</span>. Kosongkan untuk menonaktifkan.', 'mono', '2022') +
         '</div></div>' +
         '</div>' +
 
@@ -3225,14 +3308,12 @@
           }).join('') + '</tbody></table></div>';
       }
 
-      function muat() {
-        API.kirim('muatLog', { batas: 400 }).then(function (r) {
-          if (!r.success) return UI.toast(r.message, 'error');
-          data = r.data; gambar();
-        });
+      // SWR: tampil seketika dari salinan lokal; "Muat Ulang" selalu bertanya ke server.
+      function muat(segarMs) {
+        return A.swrSub('muatLog', { batas: 400 }, function (d) { data = d || []; gambar(); }, segarMs === 0 ? 0 : 30000);
       }
 
-      el.querySelector('#lg-muat').onclick = muat;
+      el.querySelector('#lg-muat').onclick = function () { muat(0); };
       el.querySelector('#lg-cari').addEventListener('input', S.debounce(function (e) { kueri = e.target.value; gambar(); }, 200));
       muat();
     }
