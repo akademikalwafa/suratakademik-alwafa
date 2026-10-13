@@ -9,7 +9,7 @@
 
   var CFG = global.APP_CONFIG;
   /** Versi frontend (dipakai untuk cache-busting modul yang dimuat belakangan). */
-  var VER = '3.1.0';
+  var VER = '3.2.0';
 
   /* ======================================================================
      1. API CLIENT — gas-instant-ux-pro
@@ -26,7 +26,8 @@
     'hapusDokumen aktifkanDokumen simpanNomorDokumen tautkanTemplate simpanPeta hapusPeta simpanDosen ' +
     'hapusDosen imporDosen simpanProdi simpanAksesMenu unggahAset simpanAppConfig simpanMahasiswa ' +
     'imporMahasiswa gantiPassword simpanAdmin notifConfigSimpan notifUlangi blastBuat blastStop crmSync ' +
-    'crmSimpan crmBulk crmInteraksi crmImport crmMerge imporJalankan').split(' ');
+    'crmSimpan crmBulk crmInteraksi crmImport crmMerge imporJalankan ' +
+    'simpanTtdDosen hapusTtdDosen simpanPenandatanganSkk').split(' ');
 
   /** Aksi yang tidak boleh diulang otomatis (mengirim pesan nyata). */
   var TANPA_ULANG = ['ujiWa', 'ujiEmail', 'blastProses', 'notifProsesSekarang'];
@@ -37,7 +38,8 @@
     prosesMassal: 200000, terbitkanDokumen: 200000, cetakUlang: 200000, notifProsesSekarang: 200000,
     blastProses: 150000, waValidasi: 100000, suratTugasDosen: 150000, crmImport: 150000,
     cetakRekap: 100000, pratinjauDraf: 100000, cetakBlanko: 100000, cetakFormulir: 100000,
-    pratinjauDokumen: 100000, crmEkspor: 100000, simpanIpk: 100000, simpanPenguji: 100000
+    pratinjauDokumen: 100000, crmEkspor: 100000, simpanIpk: 100000, simpanPenguji: 100000,
+    ambilPdf: 100000, simpanTtdDosen: 100000
   };
 
   var Perf = {
@@ -377,8 +379,11 @@
     },
     inputTgl: function (v) {
       if (!v) return '';
+      if (/^\d{4}-\d{2}-\d{2}$/.test(String(v))) return String(v);
       var d = new Date(v);
-      return isNaN(d.getTime()) ? '' : d.toISOString().substring(0, 10);
+      if (isNaN(d.getTime())) return '';
+      // v3.2: tanggal dari Sheets (tengah malam WIB = 17.00 UTC hari sebelumnya) → pakai tanggal lokal
+      return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
     },
     statusBadge: function (status) {
       var peta = {
@@ -822,6 +827,43 @@
             if (b && t.klik) b.onclick = function () { t.klik(box, b); };
           });
         }
+      });
+    },
+
+    /**
+     * Cetak PDF arsip langsung ke printer (v3.2). PDF diambil sebagai data dari server
+     * lalu dicetak lewat bingkai tersembunyi; perangkat tanpa penampil PDF (HP) membuka
+     * PDF di tab baru. Server lama tanpa aksi ambilPdf → dibuka di Google Drive.
+     */
+    cetak: function (dok, btn) {
+      var d = dok || {};
+      var fileId = d.fileId || ((String(d.url || d.pratinjau || '').match(/[-\w]{25,}/) || [])[0]) || '';
+      if (!fileId) { UI.toast('Dokumen belum tersedia untuk dicetak.', 'error'); return Promise.resolve(); }
+      if (btn) UI.sibuk(btn, true, 'Menyiapkan…');
+      return API.kirim('ambilPdf', { fileId: fileId }).then(function (r) {
+        if (btn) UI.sibuk(btn, false);
+        if (!r || !r.success) {
+          if (r && r.code === 'UNKNOWN_ACTION') { window.open('https://drive.google.com/file/d/' + fileId + '/view', '_blank', 'noopener'); return; }
+          return UI.toast((r && r.message) || 'Gagal menyiapkan dokumen.', 'error');
+        }
+        var url = URL.createObjectURL(base64KeBlob(r.data.base64, r.data.mime));
+        var tanpaViewer = navigator.pdfViewerEnabled === false ||
+          (navigator.pdfViewerEnabled === undefined && /Android|iPhone|iPad/i.test(navigator.userAgent));
+        if (tanpaViewer) { window.open(url, '_blank', 'noopener'); return; }
+        var fr = document.getElementById('cetak-frame');
+        if (fr) fr.parentNode.removeChild(fr);
+        fr = document.createElement('iframe');
+        fr.id = 'cetak-frame';
+        fr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+        fr.onload = function () {
+          setTimeout(function () {
+            try { fr.contentWindow.focus(); fr.contentWindow.print(); }
+            catch (e) { window.open(url, '_blank', 'noopener'); }
+          }, 300);
+        };
+        fr.src = url;
+        document.body.appendChild(fr);
+        UI.toast('Membuka dialog cetak…', 'ok');
       });
     },
 

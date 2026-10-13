@@ -386,9 +386,34 @@
       }).join('');
     },
 
+    /**
+     * Saat jadwal berakhir (tanggal + jam selesai; bila tidak ada, jam mulai; bila
+     * tidak ada jam, akhir hari H). Dipakai agar pop-up tidak muncul lagi setelah lewat.
+     */
+    akhirJadwal: function (x) {
+      var s = String((x && x.tanggal) || ''), d;
+      var m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (m) d = new Date(+m[1], +m[2] - 1, +m[3]);
+      else {
+        d = new Date(s);
+        if (isNaN(d.getTime())) return 0;
+        d = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      }
+      var jam = String(x.jamSelesai || x.jam || '').match(/\d{1,2}[:.]\d{2}/g);
+      if (jam && jam.length) {
+        var t = jam[jam.length - 1].split(/[:.]/);
+        d.setHours(+t[0], +t[1], 0, 0);
+      } else d.setHours(23, 59, 59, 0);
+      return d.getTime();
+    },
+
     tampilkanPengumuman: function () {
       var p = (M.D && M.D.pengumuman) || [];
-      var jadwal = p.filter(function (x) { return x.tipe === 'SEMPRO' || x.tipe === 'SIDANG'; })[0];
+      var kini = Date.now();
+      // Revisi 4: hanya jadwal yang belum lewat (sejak dijadwalkan s.d. hari H), yang terdekat lebih dulu.
+      var jadwal = p.filter(function (x) {
+        return (x.tipe === 'SEMPRO' || x.tipe === 'SIDANG') && M.akhirJadwal(x) > kini;
+      }).sort(function (a, b) { return M.akhirJadwal(a) - M.akhirJadwal(b); })[0];
       if (!jadwal || Simpan.get('pengumuman_' + jadwal.tanggal + jadwal.tipe)) return;
       Simpan.set('pengumuman_' + jadwal.tanggal + jadwal.tipe, 1);
 
@@ -1266,8 +1291,8 @@
       var isi =
         '<div class="tabs mb2" style="background:var(--surface);border:1px solid var(--line);border-radius:12px" id="sd-tabs">' +
         '<button class="tab active" data-tab="daftar">' + ik('file', 14) + ' Pendaftaran</button>' +
-        '<button class="tab" data-tab="revisi">' + ik('edit', 14) + ' Revisi Skripsi</button>' +
         '<button class="tab" data-tab="skl">' + ik('award', 14) + ' Unduh SKL</button>' +
+        '<button class="tab" data-tab="revisi">' + ik('edit', 14) + ' Revisi Skripsi</button>' +
         '</div>';
 
       /* Tab pendaftaran */
@@ -1278,7 +1303,7 @@
           '<div style="font-size:18px;font-weight:800;margin:6px 0 10px">Jadwal Sidang Skripsi Telah Ditetapkan</div>' +
           '<div style="display:grid;gap:6px;font-size:13.5px">' +
           '<div>' + ik('calendar', 15) + ' ' + F.hari(jadwal.tanggalJadwal) + ', ' + F.tgl(jadwal.tanggalJadwal) + '</div>' +
-          '<div>' + ik('clock', 15) + ' Pukul ' + F.esc(jadwal.jamJadwal) + ' WIB</div>' +
+          '<div>' + ik('clock', 15) + ' Pukul ' + F.esc(jadwal.jamJadwal + (jadwal.jamSelesai ? ' – ' + jadwal.jamSelesai : '')) + ' WIB</div>' +
           '<div>' + ik('building', 15) + ' ' + F.esc(jadwal.ruang) + '</div>' +
           (jadwal.penguji1 ? '<div>' + ik('users', 15) + ' Penguji: ' + F.esc([jadwal.penguji1, jadwal.penguji2, jadwal.penguji3].filter(Boolean).join(' • ')) + '</div>' : '') +
           '</div></div>';
