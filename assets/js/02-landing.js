@@ -6,6 +6,20 @@
   'use strict';
   var API = S.API, UI = S.UI, F = S.F, ik = S.ikon, Simpan = S.Simpan;
 
+  /** v3.3: ikon & warna tiap layanan — dipakai halaman masuk dan dashboard mahasiswa. */
+  S.GAYA_LAYANAN = {
+    surat_aktif: { i: 'doc', t: 'tone-blue' },
+    magang: { i: 'briefcase', t: 'tone-orange' },
+    konfirmasi_magang: { i: 'checkCircle', t: 'tone-green' },
+    penelitian: { i: 'flask', t: 'tone-violet' },
+    sempro: { i: 'presentation', t: 'tone-cyan' },
+    sidang: { i: 'graduation', t: 'tone-indigo' },
+    kelulusan: { i: 'award', t: 'tone-amber' },
+    perbaikan_nilai: { i: 'edit', t: 'tone-rose' },
+    formulir: { i: 'printer', t: 'tone-slate' },
+    riwayat: { i: 'list', t: 'tone-slate' }
+  };
+
   var Landing = {
 
     init: function () {
@@ -17,6 +31,10 @@
       document.getElementById('login-mhs').onsubmit = Landing.masukMahasiswa;
       document.getElementById('login-adm').onsubmit = Landing.masukAdmin;
       document.getElementById('btn-cek-surat').onclick = Landing.dialogVerifikasi;
+
+      // v3.3: pencarian layanan di halaman masuk (lokal, tanpa server)
+      var cari = document.getElementById('lp-cari');
+      if (cari) cari.addEventListener('input', S.debounce(function () { Landing.saringLayanan(cari.value); }, 120));
 
       // NIM: angka, boleh bertitik (22.23.0001). Tahun: hanya angka.
       ['in-nim', 'in-tahun'].forEach(function (id) {
@@ -74,7 +92,7 @@
 
       var st = document.getElementById('lp-status');
       st.className = 'badge ' + (dariCache ? 'badge-gray' : 'badge-green');
-      st.innerHTML = '<span class="dot"></span>Server Aktif • TA ' + F.esc(d.tahunAkademik) + ' ' + F.esc(d.semesterTipe);
+      st.innerHTML = '<span class="dot"></span>Server Aktif<span class="lp-ta-sm"> • TA ' + F.esc(d.tahunAkademik) + ' ' + F.esc(d.semesterTipe) + '</span>';
 
       document.getElementById('lp-unit').textContent = d.unit || 'BAAK STIS Al Wafa';
       document.getElementById('lp-ta').textContent = 'Tahun Akademik ' + d.tahunAkademik + ' ' + d.semesterTipe;
@@ -86,12 +104,6 @@
       var aktif = (d.layanan || []).filter(function (x) { return x.aktif; }).length;
       document.getElementById('lp-jumlah').innerHTML = '<span class="dot"></span>' + aktif + ' Layanan Aktif';
 
-      var ikonMenu = {
-        surat_aktif: 'doc', magang: 'briefcase', konfirmasi_magang: 'checkCircle',
-        penelitian: 'flask', sempro: 'presentation', sidang: 'graduation',
-        kelulusan: 'award', perbaikan_nilai: 'edit'
-      };
-
       var html = '';
       if (d.batasMagang) {
         html += '<div class="notice mb2">' + ik('clock', 17) +
@@ -99,18 +111,35 @@
           F.tgl(d.batasMagang) + '.</span></div>';
       }
 
-      html += (d.layanan || []).map(function (x) {
+      // v3.3: ubin berwarna (ikon 3D) + pencarian
+      html += '<div class="lp-tiles">' + (d.layanan || []).map(function (x) {
+        var g = S.GAYA_LAYANAN[x.kunci] || { i: 'doc', t: 'tone-slate' };
         var cls = x.aktif ? 'badge-green' : 'badge-red';
-        return '<div class="layanan-item">' +
-          '<span style="color:' + (x.aktif ? 'var(--orange-600)' : 'var(--text-3)') + ';line-height:0">' +
-          ik(ikonMenu[x.kunci] || 'doc', 19) + '</span>' +
+        return '<div class="lp-tile ' + g.t + (x.aktif ? '' : ' off') + '" data-cari="' + F.esc(String(x.nama + ' ' + x.kunci).toLowerCase()) + '">' +
+          '<span class="ic3d">' + ik(g.i, 19) + '</span>' +
           '<div class="grow"><div class="nm">' + F.esc(x.nama) + '</div>' +
-          '<div class="ds">' + F.esc(x.alasan || ('Semester ' + x.semester)) + '</div></div>' +
-          '<span class="badge ' + cls + '">' + F.esc(x.badge) + '</span></div>';
-      }).join('');
+          '<div class="ds">' + F.esc(x.alasan || ('Semester ' + x.semester)) + '</div>' +
+          '<span class="badge ' + cls + '"><span class="dot"></span>' + F.esc(x.badge) + '</span></div></div>';
+      }).join('') + '</div>' +
+        '<div class="hidden" id="lp-kosong">' + UI.kosong('Layanan tidak ditemukan', 'Coba kata kunci lain.', 'search') + '</div>';
 
       html += '<div class="tiny muted mt2">' + ik('clock', 12) + ' Diperbarui: ' + F.tglJam(d.diperbarui) + '</div>';
       document.getElementById('lp-layanan').innerHTML = html;
+      var cari = document.getElementById('lp-cari');
+      if (cari && cari.value) Landing.saringLayanan(cari.value);
+    },
+
+    saringLayanan: function (q) {
+      q = String(q || '').trim().toLowerCase();
+      var ada = 0;
+      Array.prototype.forEach.call(document.querySelectorAll('#lp-layanan .lp-tile'), function (el) {
+        var cocok = !q || el.getAttribute('data-cari').indexOf(q) >= 0 ||
+          (q === 'skripsi' && /sidang|sempro|kelulusan/.test(el.getAttribute('data-cari')));
+        el.classList.toggle('hidden', !cocok);
+        if (cocok) ada++;
+      });
+      var k = document.getElementById('lp-kosong');
+      if (k) k.classList.toggle('hidden', ada > 0);
     },
 
     /* --------------------------------------------------------- Login */

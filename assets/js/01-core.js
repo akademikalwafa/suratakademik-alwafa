@@ -9,7 +9,7 @@
 
   var CFG = global.APP_CONFIG;
   /** Versi frontend (dipakai untuk cache-busting modul yang dimuat belakangan). */
-  var VER = '3.2.0';
+  var VER = '3.3.0';
 
   /* ======================================================================
      1. API CLIENT — gas-instant-ux-pro
@@ -27,7 +27,8 @@
     'hapusDosen imporDosen simpanProdi simpanAksesMenu unggahAset simpanAppConfig simpanMahasiswa ' +
     'imporMahasiswa gantiPassword simpanAdmin notifConfigSimpan notifUlangi blastBuat blastStop crmSync ' +
     'crmSimpan crmBulk crmInteraksi crmImport crmMerge imporJalankan ' +
-    'simpanTtdDosen hapusTtdDosen simpanPenandatanganSkk').split(' ');
+    'simpanTtdDosen hapusTtdDosen simpanPenandatanganSkk ' +
+    'kirimDokumenMhs sinkronRekapJalankan').split(' ');
 
   /** Aksi yang tidak boleh diulang otomatis (mengirim pesan nyata). */
   var TANPA_ULANG = ['ujiWa', 'ujiEmail', 'blastProses', 'notifProsesSekarang'];
@@ -455,7 +456,15 @@
     list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
     send: '<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
     eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
-    printer: '<path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>'
+    printer: '<path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>',
+    /* v3.3 */
+    arrowLeft: '<path d="M19 12H5M11 18l-6-6 6-6"/>',
+    more: '<circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/>',
+    fileCheck: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 14.5l2 2 4-4"/>',
+    idCard: '<rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8.5" cy="11" r="2"/><path d="M5.5 16c.6-1.3 1.7-2 3-2s2.4.7 3 2M14 10h5M14 13.5h4"/>',
+    mapPin: '<path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.6"/>',
+    layers: '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>',
+    sparkle: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.5 2.5M15.2 15.2l2.5 2.5M6.3 17.7l2.5-2.5M15.2 8.8l2.5-2.5"/>'
   };
 
   function ikon(nama, ukuran, tebal) {
@@ -662,6 +671,7 @@
         if (!r.success) {
           info.innerHTML = '<span style="color:var(--red-600)">' + F.esc(r.message) + '</span>';
           input.value = '';
+          try { el.dispatchEvent(new CustomEvent('unggah-selesai', { bubbles: true })); } catch (e) { }
           return;
         }
         st.fileId = r.data.fileId;
@@ -674,6 +684,8 @@
           '<div class="tiny muted">Berhasil diunggah • ' + (f.size / 1024).toFixed(0) + ' KB</div></div>' +
           '<span class="btn btn-ghost btn-sm">Ganti</span></div>';
         if (opsi && opsi.selesai) opsi.selesai(st);
+        // v3.3: beri tahu formulir induk (tombol kirim aktif bila semua isian wajib lengkap)
+        try { el.dispatchEvent(new CustomEvent('unggah-selesai', { bubbles: true })); } catch (e) { }
       });
     };
     return st;
