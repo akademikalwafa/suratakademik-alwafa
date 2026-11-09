@@ -76,6 +76,8 @@
           var st = document.getElementById('lp-status');
           st.className = 'badge badge-red';
           st.innerHTML = '<span class="dot"></span>Server tidak terjangkau';
+          var on = document.getElementById('lp-online');
+          if (on) { on.textContent = 'Offline'; on.className = 'lp-online off'; }
           if (!cache) {
             document.getElementById('lp-layanan').innerHTML =
               '<div class="notice danger">' + ik('alert', 17) + '<span>' + F.esc(r.message) + '</span></div>';
@@ -93,6 +95,17 @@
       var st = document.getElementById('lp-status');
       st.className = 'badge ' + (dariCache ? 'badge-gray' : 'badge-green');
       st.innerHTML = '<span class="dot"></span>Server Aktif<span class="lp-ta-sm"> • TA ' + F.esc(d.tahunAkademik) + ' ' + F.esc(d.semesterTipe) + '</span>';
+      // v3.4 (Revisi 5 · gambar halaman masuk): status "Online" di samping nama aplikasi + TA pada HP
+      var on = document.getElementById('lp-online');
+      if (on) { on.textContent = 'Online'; on.className = 'lp-online' + (dariCache ? ' cache' : ''); }
+      var taNav = document.getElementById('lp-ta-nav');
+      if (taNav) taNav.textContent = 'TA ' + d.tahunAkademik + ' ' + d.semesterTipe;
+      var hub = document.getElementById('lp-hubungi');
+      if (hub) {
+        if (d.wa) hub.href = 'https://wa.me/' + String(d.wa).replace(/[^\d]/g, '').replace(/^0/, '62') + '?text=' + encodeURIComponent('Assalamu\'alaikum, saya mengalami kendala login NIM di SIAKAD Surat.');
+        else if (d.email) hub.href = 'mailto:' + d.email;
+        else hub.removeAttribute('href');
+      }
 
       document.getElementById('lp-unit').textContent = d.unit || 'BAAK STIS Al Wafa';
       document.getElementById('lp-ta').textContent = 'Tahun Akademik ' + d.tahunAkademik + ' ' + d.semesterTipe;
@@ -104,35 +117,47 @@
       var aktif = (d.layanan || []).filter(function (x) { return x.aktif; }).length;
       document.getElementById('lp-jumlah').innerHTML = '<span class="dot"></span>' + aktif + ' Layanan Aktif';
 
-      var html = '';
-      if (d.batasMagang) {
-        html += '<div class="notice mb2">' + ik('clock', 17) +
-          '<span><b>Batas Pengajuan Magang:</b> konfirmasi tempat magang ditutup ' +
-          F.tgl(d.batasMagang) + '.</span></div>';
-      }
-
-      // v3.3: ubin berwarna (ikon 3D) + pencarian
-      html += '<div class="lp-tiles">' + (d.layanan || []).map(function (x) {
+      // v3.4 (Revisi 5 · gambar halaman masuk): daftar baris — ikon lembut, keterangan & status di kanan.
+      var html = '<div class="lp-rows">' + (d.layanan || []).map(function (x) {
         var g = S.GAYA_LAYANAN[x.kunci] || { i: 'doc', t: 'tone-slate' };
-        var cls = x.aktif ? 'badge-green' : 'badge-red';
-        return '<div class="lp-tile ' + g.t + (x.aktif ? '' : ' off') + '" data-cari="' + F.esc(String(x.nama + ' ' + x.kunci).toLowerCase()) + '">' +
-          '<span class="ic3d">' + ik(g.i, 19) + '</span>' +
-          '<div class="grow"><div class="nm">' + F.esc(x.nama) + '</div>' +
-          '<div class="ds">' + F.esc(x.alasan || ('Semester ' + x.semester)) + '</div>' +
-          '<span class="badge ' + cls + '"><span class="dot"></span>' + F.esc(x.badge) + '</span></div></div>';
+        var lewat = x.badge === 'Batas Terlewat';
+        var ket;
+        if (x.aktif) {
+          ket = 'Semester ' + x.semester +
+            (x.kunci === 'surat_aktif' ? ' • Instan &amp; Terverifikasi' : '') +
+            ((x.kunci === 'magang' || x.kunci === 'konfirmasi_magang') && d.batasMagang ? ' • batas ' + F.esc(F.tgl(d.batasMagang)) : '');
+        } else {
+          ket = '<span class="' + (lewat ? 'merah' : '') + '">' + F.esc(x.alasan || (lewat ? 'Akses sudah ditutup' : 'Layanan sedang ditutup')) + '</span>';
+        }
+        var pill = x.aktif ? 'ok' : (lewat ? 'lewat' : 'tutup');
+        return '<div class="lp-row ' + g.t + (x.aktif ? '' : ' off') + '" data-cari="' + F.esc(String(x.nama + ' ' + x.kunci).toLowerCase()) + '">' +
+          '<span class="lp-ic">' + ik(g.i, 18) + '</span>' +
+          '<div class="grow" style="min-width:0"><div class="nm">' + F.esc(x.nama) + '</div><div class="ds">' + ket + '</div></div>' +
+          '<span class="lp-pill ' + pill + '">' + F.esc(x.badge) + (x.aktif ? '<span class="m-only">' + ik('arrowRight', 13) + '</span>' : '') + '</span></div>';
       }).join('') + '</div>' +
         '<div class="hidden" id="lp-kosong">' + UI.kosong('Layanan tidak ditemukan', 'Coba kata kunci lain.', 'search') + '</div>';
 
-      html += '<div class="tiny muted mt2">' + ik('clock', 12) + ' Diperbarui: ' + F.tglJam(d.diperbarui) + '</div>';
+      html += '<div class="lp-kaki"><span>' + ik('clock', 13) + ' Diperbarui: ' + F.tglJam(d.diperbarui) + '</span>' +
+        '<button class="btn-link" type="button" id="lp-perbarui">Perbarui status ' + ik('refresh', 13) + '</button></div>';
       document.getElementById('lp-layanan').innerHTML = html;
       var cari = document.getElementById('lp-cari');
       if (cari && cari.value) Landing.saringLayanan(cari.value);
+      var bP = document.getElementById('lp-perbarui');
+      if (bP) bP.onclick = function () {
+        UI.sibuk(bP, true, 'Memperbarui…');
+        API.kirim('infoPublik', { _fresh: true }).then(function (r) {
+          UI.sibuk(bP, false);
+          if (!r || !r.success) return UI.toast((r && r.message) || 'Server tidak terjangkau.', 'error');
+          Simpan.set('publik', r.data);
+          Landing.renderInfo(r.data, false);
+        });
+      };
     },
 
     saringLayanan: function (q) {
       q = String(q || '').trim().toLowerCase();
       var ada = 0;
-      Array.prototype.forEach.call(document.querySelectorAll('#lp-layanan .lp-tile'), function (el) {
+      Array.prototype.forEach.call(document.querySelectorAll('#lp-layanan .lp-row'), function (el) {
         var cocok = !q || el.getAttribute('data-cari').indexOf(q) >= 0 ||
           (q === 'skripsi' && /sidang|sempro|kelulusan/.test(el.getAttribute('data-cari')));
         el.classList.toggle('hidden', !cocok);

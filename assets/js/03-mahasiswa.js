@@ -12,14 +12,15 @@
      Formulir Siap Cetak berdiri sendiri, view "layanan" untuk tombol Pengajuan di HP. */
   var MENU = [
     { k: 'beranda', n: 'Beranda', i: 'home', d: 'Ringkasan status & layanan', g: 'utama' },
-    { k: 'surat_aktif', n: 'Surat Keterangan Aktif', i: 'doc', d: 'BPJS, beasiswa & tunjangan orang tua', g: 'layanan' },
-    { k: 'magang', n: 'Magang / PKL', i: 'briefcase', d: 'Surat permohonan magang ke instansi', g: 'layanan' },
-    { k: 'konfirmasi_magang', n: 'Konfirmasi Tempat Magang', i: 'checkCircle', d: 'Laporkan instansi yang menerima Anda', g: 'layanan' },
-    { k: 'penelitian', n: 'Izin Penelitian', i: 'flask', d: 'Surat pengantar riset skripsi', g: 'layanan' },
-    { k: 'sempro', n: 'Seminar Proposal', i: 'presentation', d: 'Pendaftaran, revisi & SK Pembimbing', g: 'layanan' },
-    { k: 'sidang', n: 'Skripsi', i: 'graduation', d: 'Pendaftaran sidang, unduh SKL & revisi skripsi', g: 'layanan' },
-    { k: 'kelulusan', n: 'Administrasi Kelulusan', i: 'award', d: 'Syarat pengambilan ijazah & wisuda', g: 'layanan' },
-    { k: 'perbaikan_nilai', n: 'Perbaikan Nilai', i: 'edit', d: 'Pengajuan ujian remedial mata kuliah', g: 'layanan' },
+    /* v3.4: sn = nama ringkas di sidebar; kn/kd = judul & keterangan kartu Layanan Akademik (sesuai gambar Revisi 5) */
+    { k: 'surat_aktif', n: 'Surat Keterangan Aktif', sn: 'Surat Aktif', i: 'doc', d: 'BPJS, beasiswa & tunjangan orang tua', g: 'layanan', kd: 'Surat keterangan aktif kuliah resmi BAAK' },
+    { k: 'magang', n: 'Magang / PKL', i: 'briefcase', d: 'Surat permohonan magang ke instansi', g: 'layanan', kd: 'Pengajuan instansi & pembimbing magang' },
+    { k: 'konfirmasi_magang', n: 'Konfirmasi Tempat Magang', sn: 'Konfirmasi Magang', kn: 'Konfirmasi Tempat Magang / PKL', i: 'checkCircle', d: 'Laporkan instansi yang menerima Anda', g: 'layanan', kd: 'Verifikasi penerimaan dari instansi mitra' },
+    { k: 'penelitian', n: 'Izin Penelitian', kn: 'Surat Izin Penelitian', i: 'flask', d: 'Surat pengantar riset skripsi', g: 'layanan', kd: 'Surat izin pengumpulan data & riset lapangan' },
+    { k: 'sempro', n: 'Seminar Proposal', kn: 'Proposal', i: 'presentation', d: 'Pendaftaran, revisi & SK Pembimbing', g: 'layanan', kd: 'Pendaftaran sempro, pengajuan revisi dan SK Pembimbing' },
+    { k: 'sidang', n: 'Skripsi', sn: 'Sidang Skripsi', i: 'graduation', d: 'Pendaftaran sidang, unduh SKL & revisi skripsi', g: 'layanan', kd: 'Pendaftaran sidang skripsi, unduh SKL & revisi skripsi' },
+    { k: 'kelulusan', n: 'Administrasi Kelulusan', i: 'award', d: 'Syarat pengambilan ijazah & wisuda', g: 'layanan', kd: 'Kartu pengambilan ijazah & bebas tanggungan' },
+    { k: 'perbaikan_nilai', n: 'Perbaikan Nilai', i: 'edit', d: 'Pengajuan ujian remedial mata kuliah', g: 'layanan', kd: 'Formulir pengajuan remedial & konfirmasi nilai mata kuliah' },
     { k: 'formulir', n: 'Formulir Siap Cetak', i: 'printer', d: 'Blanko seminar proposal & skripsi', g: 'layanan' },
     { k: 'riwayat', n: 'Riwayat Pengajuan', i: 'list', d: 'Pantau status & unduh dokumen ber-QR', g: 'akun' },
     { k: 'profil', n: 'Profil Saya', i: 'user', d: 'Data kontak & informasi akademik', g: 'akun' },
@@ -121,10 +122,13 @@
         if (m.g !== grupTerakhir) { html += '<div class="nav-group">' + GRUP[m.g] + '</div>'; grupTerakhir = m.g; }
         html += '<button class="nav-item" data-nav="mhsview" data-view="' + m.k + '">' +
           '<span class="ic">' + ik(m.i, 18) + '</span>' +
-          '<span class="lbl-txt">' + F.esc(m.n) + '</span>' +
+          '<span class="lbl-txt">' + F.esc(m.sn || m.n) + '</span>' +
           '<span class="cnt zero" data-cnt="' + m.k + '">0</span></button>';
       });
       nav.innerHTML = html;
+      // v3.4: menu Beranda langsung tertandai aktif saat portal pertama dibuka
+      var navBeranda = nav.querySelector('[data-view="beranda"]');
+      if (navBeranda) navBeranda.classList.add('active');
 
       // --- Kontainer view ---
       document.getElementById('mhsview').innerHTML = MENU.map(function (m) {
@@ -199,6 +203,11 @@
       document.getElementById('mhs-ava').textContent = F.inisial(d.profil.nama);
       document.getElementById('mhs-nama-side').textContent = d.profil.nama;
       document.getElementById('mhs-nim-side').textContent = 'NIM ' + d.profil.nim;
+      // v3.4: avatar & T.A. pada bilah atas
+      var tbAva = document.getElementById('mhs-tb-ava');
+      if (tbAva) tbAva.textContent = F.inisial(d.profil.nama);
+      var tbTa = document.getElementById('mhs-tb-ta');
+      if (tbTa) tbTa.innerHTML = '<span class="dot"></span>T.A. ' + F.esc(d.profil.tahunAkademik) + ' ' + F.esc(d.profil.semesterTipe);
 
       // Badge jumlah pada sidebar
       var menunggu = {};
@@ -280,19 +289,20 @@
 
       var html = '';
 
-      // Kartu profil
+      // v3.4 (Revisi 5 · gambar Layanan Akademik): kartu profil gelap + kotak info 2×2
       html +=
-        '<div class="profile-card mb2">' +
-        '<div class="row" style="align-items:center;position:relative;z-index:1">' +
-        '<div class="ava2">' + F.inisial(p.nama) + '</div>' +
+        '<div class="prof4 mb2">' +
+        '<div class="prof4-kiri">' +
+        '<div class="prof4-ava">' + F.inisial(p.nama) + '<span class="cek">' + ik('check', 11, 3) + '</span></div>' +
         '<div class="grow" style="min-width:0">' +
-        '<div class="nm2 truncate">' + F.esc(p.nama) + '</div>' +
-        '<div class="nim2">NIM ' + F.esc(p.nim) + '</div></div></div>' +
-        '<div class="row-wrap mt2" style="position:relative;z-index:1">' +
-        '<span class="pchip">' + ik('book', 13) + F.esc(p.prodi) + '</span>' +
-        '<span class="pchip">Semester ' + p.semester + ' • ' + F.esc(p.semesterTipe) + '</span>' +
-        '<span class="pchip">Angkatan ' + F.esc(p.tahunMasuk) + '</span>' +
-        '<span class="pchip">TA ' + F.esc(p.tahunAkademik) + '</span>' +
+        '<div class="prof4-tag"><span class="t1">Mahasiswa</span><span class="t2"><span class="dot"></span>Aktif Berkuliah</span></div>' +
+        '<div class="prof4-nm">' + F.esc(p.nama) + '</div>' +
+        '<div class="prof4-id">' + ik('idCard', 13) + ' <span class="mono">' + F.esc(p.nim) + '</span> • ' + F.esc(p.prodi) + '</div></div></div>' +
+        '<div class="prof4-info">' +
+        '<div><div class="l">Semester</div><div class="v">' + p.semester + ' <small>(' + F.esc(p.semesterTipe) + ')</small></div></div>' +
+        '<div><div class="l">Tahun Akademik</div><div class="v">' + F.esc(p.tahunAkademik) + '</div></div>' +
+        '<div><div class="l">Angkatan</div><div class="v">' + F.esc(p.tahunMasuk) + '</div></div>' +
+        '<div><div class="l">Tingkat</div><div class="v">' + (p.tingkat >= 4 ? 'Tingkat Akhir' : 'Tingkat ' + (p.tingkat || '-')) + '</div></div>' +
         '</div></div>';
 
       // Peringatan batas magang
@@ -302,44 +312,65 @@
           F.tgl(d.konfigurasi.batasMagang) + '. Lengkapi data PJ Magang sebelum akses ditutup.</span></div>';
       }
 
-      // Status pengajuan terakhir
+      // Status pengajuan terakhir (v3.4: jenis dokumen • langkah • tombol dalam satu kotak)
       if (terakhir) {
         var langkah = M.langkahStatus(terakhir);
+        var adaDok = terakhir.dokumen && terakhir.dokumen.length;
         html +=
-          '<div class="card mb2">' +
-          '<div class="card-head"><div><h3>Status Pengajuan Terakhir</h3>' +
-          '<div class="sub">' + F.esc(terakhir.jenisLabel) + '</div></div>' +
-          F.statusBadge(terakhir.status) + '</div>' +
-          '<div class="card-body">' +
-          (terakhir.nomorSurat ? '<div class="small muted mb1">Nomor dokumen: <span class="mono bold">' + F.esc(terakhir.nomorSurat) + '</span></div>' : '') +
+          '<div class="card stat4 mb2">' +
+          '<div class="stat4-head"><span class="stat4-ic">' + ik('fileCheck', 17) + '</span>' +
+          '<h3>Status Pengajuan Terakhir</h3>' + F.statusBadge(terakhir.status) +
+          '<button class="btn-link stat4-semua" data-nav="mhsview" data-view="riwayat">Lihat Semua Riwayat (' + (d.riwayat || []).length + ') ' + ik('arrowRight', 13) + '</button></div>' +
+          '<div class="stat4-box">' +
+          '<div class="stat4-jenis"><div class="l">Jenis Dokumen</div><div class="v">' + F.esc(terakhir.jenisLabel) + '</div>' +
+          (terakhir.nomorSurat ? '<div class="no mono">No: ' + F.esc(terakhir.nomorSurat) + '</div>' : '') + '</div>' +
           '<div class="steps">' + langkah + '</div>' +
-          (terakhir.status === 'DITOLAK' && terakhir.alasanTolak
-            ? '<div class="notice danger mt2">' + ik('alert', 17) + '<span><b>Catatan BAAK:</b> ' + F.esc(terakhir.alasanTolak) + '</span></div>' : '') +
-          '<div class="row-wrap mt2">' +
-          '<button class="btn btn-ghost btn-sm" data-nav="mhsview" data-view="riwayat">Lihat Semua Riwayat (' + (d.riwayat || []).length + ')</button>' +
-          (terakhir.dokumen && terakhir.dokumen.length
-            ? '<button class="btn btn-ghost btn-sm" data-dokpv="' + F.esc(terakhir.id) + '">' + ik('eye', 15) + 'Pratinjau</button>' +
-              '<button class="btn btn-primary btn-sm" data-dokdl="' + F.esc(terakhir.id) + '">' + ik('download', 15) + 'Unduh Dokumen</button>'
+          '<div class="stat4-aksi">' +
+          (adaDok
+            ? '<button class="btn btn-primary btn-sm" data-dokdl="' + F.esc(terakhir.id) + '">' + ik('download', 15) + 'Unduh Dokumen</button>' +
+              '<button class="btn btn-ghost btn-sm" data-dokpv="' + F.esc(terakhir.id) + '">' + ik('eye', 15) + 'Pratinjau</button>'
             : '') +
-          '</div></div></div>';
+          '</div></div>' +
+          (terakhir.status === 'DITOLAK' && terakhir.alasanTolak
+            ? '<div class="notice danger" style="margin:0 16px 16px">' + ik('alert', 17) + '<span><b>Catatan BAAK:</b> ' + F.esc(terakhir.alasanTolak) + '</span></div>' : '') +
+          '</div>';
       }
 
-      // Grid layanan (v3.3: kartu 3D berwarna)
-      html += M.gridLayanan();
+      // Grid layanan (v3.4: 8 kartu sesuai gambar Revisi 5) + Formulir Siap Cetak sebagai bagian tersendiri
+      html += M.gridLayanan() + M.blokFormulirCetak();
 
       // Bantuan
       if (d.konfigurasi.wa) {
-        html += '<div class="card mt3"><div class="card-body between" style="flex-wrap:wrap">' +
-          '<div><div class="bold">Butuh bantuan persuratan?</div>' +
-          '<div class="small muted">Tim BAAK STIS Al Wafa siap melayani pada jam kerja.</div></div>' +
-          '<a class="btn btn-success btn-sm" target="_blank" rel="noopener" href="https://wa.me/' + F.esc(d.konfigurasi.wa) + '">' +
-          ik('phone', 15) + 'Konsultasi via WhatsApp</a></div></div>';
+        html += '<div class="card bantu4 mt3"><div class="card-body">' +
+          '<span class="bantu4-ic">' + ik('phone', 20) + '</span>' +
+          '<div class="grow"><div class="bold">Butuh Bantuan Administrasi Persuratan?</div>' +
+          '<div class="small muted">Tim BAAK STIS Al Wafa siap melayani konsultasi dan kendala berkas pada jam kerja resmi.</div></div>' +
+          '<a class="btn btn-success" target="_blank" rel="noopener" href="https://wa.me/' + F.esc(d.konfigurasi.wa) + '">' +
+          ik('send', 15) + 'Konsultasi via WhatsApp</a></div></div>';
       }
 
       var el = document.getElementById('mhsview-beranda');
       el.innerHTML = html;
       M.pasangGrid(el);
       M.pasangAksiUmum(el);
+    },
+
+    /** v3.4: bagian "Formulir Siap Cetak" di bawah Layanan Akademik (berdiri sendiri, lepas dari menu). */
+    blokFormulirCetak: function () {
+      var d = M.D, buka = d.blanko || [], kunci = d.blankoTerkunci || [];
+      if (!buka.length && !kunci.length) return '';
+      return '<div class="card fsc4 mt3"><div class="fsc4-head"><span class="fsc4-ic">' + ik('printer', 17) + '</span>' +
+        '<h3>Formulir Siap Cetak</h3><span class="fsc4-pill">Auto-Fill Akurat</span></div>' +
+        '<div class="fsc4-list">' +
+        buka.map(function (x) {
+          return '<div class="fsc4-row"><span class="ic">' + ik('file', 15) + '</span><div class="grow nm">' + F.esc(x.nama) + '</div>' +
+            '<button class="btn btn-primary btn-sm" data-cetak="' + F.esc(x.kode) + '">' + ik('edit', 14) + 'Isi &amp; Cetak</button></div>';
+        }).join('') +
+        kunci.map(function (x) {
+          return '<div class="fsc4-row off"><span class="ic">' + ik('lock', 15) + '</span><div class="grow nm">' + F.esc(x.nama) + '</div>' +
+            '<span class="badge badge-gray">' + ik('lock', 11) + ' Smt ' + F.esc(x.semesterMin) + '+</span></div>';
+        }).join('') +
+        '</div><div class="fsc4-note">' + ik('info', 14) + ' Pastikan pop-up browser aktif agar file PDF unduhan tidak terblokir secara otomatis.</div></div>';
     },
 
     /* ---------------------------------------------- v3.3 Layanan Akademik */
@@ -352,34 +383,52 @@
         if (r.status === 'MENUNGGU') { var k = M.menuDariJenis(r.jenis); menunggu[k] = (menunggu[k] || 0) + 1; }
       });
       var nBlanko = (d.blanko || []).length;
-      var daftar = MENU.filter(function (m) { return m.g === 'layanan'; });
-      return '<div class="sec-head"><div><h3>Layanan Akademik</h3>' +
-        '<div class="s">Pilih layanan sesuai kebutuhan Anda</div></div>' +
-        '<span class="badge badge-gray">' + daftar.length + ' layanan</span></div>' +
-        '<div class="svc3-grid">' + daftar.map(function (m) {
-          var a = ak[m.k] || { buka: true, badge: '' };
-          if (m.k === 'formulir') a = { buka: true, badge: '' };
-          var g = (S.GAYA_LAYANAN || {})[m.k] || { i: m.i, t: 'tone-orange' };
-          var terkunci = !a.buka;
-          var batas = !terkunci && a.badge && /^Batas /.test(a.badge) ? a.badge : '';
-          var foot = terkunci
-            ? ik('lock', 12) + ' ' + F.esc(a.badge || 'Terkunci')
-            : (m.k === 'formulir' ? (nBlanko ? nBlanko + ' formulir siap' : 'Lihat formulir') + ' ' + ik('arrowRight', 12)
-              : 'Buka layanan ' + ik('arrowRight', 12));
-          return '<button class="svc3 ' + g.t + (terkunci ? ' locked' : '') + '" type="button" ' +
-            (terkunci ? 'data-locked="' + F.esc(a.alasan || '') + '"' : 'data-nav="mhsview" data-view="' + m.k + '"') + '>' +
-            (menunggu[m.k] ? '<span class="n" title="Menunggu verifikasi">' + menunggu[m.k] + '</span>' : '') +
-            '<span class="ic3d">' + ik(g.i, 26) + '</span>' +
-            '<span class="t">' + F.esc(m.n) + '</span>' +
-            '<span class="d">' + F.esc(m.d) + '</span>' +
-            (batas ? '<span class="bt">' + ik('clock', 11) + ' ' + F.esc(batas) + '</span>' : '') +
-            '<span class="f">' + foot + '</span></button>';
+      // v3.4: 8 layanan (Formulir Siap Cetak menjadi bagian tersendiri di bawahnya)
+      var daftar = MENU.filter(function (m) { return m.g === 'layanan' && m.k !== 'formulir'; });
+      return '<div class="sec-head sec4"><div><h3>Layanan Akademik</h3>' +
+        '<div class="s">Pilih jenis persuratan atau layanan administrasi yang Anda butuhkan</div></div>' +
+        '<span class="badge badge-gray m-only">Akses Langsung 24/7</span></div>' +
+        '<div class="svc4-grid">' + daftar.map(function (m) {
+          var a4 = ak[m.k] || { buka: true, badge: '' };
+          var g4 = (S.GAYA_LAYANAN || {})[m.k] || { i: m.i, t: 'tone-orange' };
+          var kunci4 = !a4.buka, bd = String(a4.badge || '');
+          var pill, kaki;
+          if (!kunci4) {
+            pill = (m.k === 'sempro' || m.k === 'sidang') ? '<span class="p4 oranye">Tersedia</span>' : '<span class="p4 hijau">Aktif</span>';
+            kaki = '<span class="k4 buka">Buka Layanan ' + ik('arrowRight', 13) + '</span>';
+          } else if (bd === 'Batas Terlewat') {
+            pill = '<span class="p4 merah">' + ik('clock', 11) + ' Batas Terlewat</span>';
+            kaki = '<span class="k4">Terkunci ' + ik('lock', 12) + '</span>';
+          } else if (bd === 'Ditutup') {
+            pill = '<span class="p4 abu">Ditutup</span>';
+            kaki = '<span class="k4">Periode Ditutup ' + ik('calendar', 12) + '</span>';
+          } else if (bd === 'Selesai') {
+            pill = '<span class="p4 hijau">Selesai</span>';
+            kaki = '<span class="k4">Sudah Selesai ' + ik('check', 12) + '</span>';
+          } else if (bd === 'Terkunci') {
+            pill = '<span class="p4 abu">Terkunci</span>';
+            kaki = '<span class="k4">Prasyarat Belum Lengkap ' + ik('lock', 12) + '</span>';
+          } else {
+            pill = '<span class="p4 abu">' + F.esc(bd || 'Terkunci') + '</span>';
+            kaki = '<span class="k4">Terkunci ' + ik('lock', 12) + '</span>';
+          }
+          var batas4 = !kunci4 && /^Batas /.test(bd) ? '<span class="bt">' + ik('clock', 11) + ' ' + F.esc(bd) + '</span>' : '';
+          return '<button class="svc4 ' + g4.t + (kunci4 ? ' locked' : '') + '" type="button" ' +
+            (kunci4 ? 'data-locked="' + F.esc(a4.alasan || '') + '"' : 'data-nav="mhsview" data-view="' + m.k + '"') + '>' +
+            pill + (menunggu[m.k] ? '<span class="n" title="Menunggu verifikasi">' + menunggu[m.k] + '</span>' : '') +
+            '<span class="ic3d">' + ik(g4.i, 24) + '</span>' +
+            '<span class="t">' + F.esc(m.kn || m.n) + (kunci4 ? ' ' + ik('lock', 13) : '') + '</span>' +
+            '<span class="d">' + F.esc(m.kd || m.d) + '</span>' + batas4 + kaki + '</button>';
         }).join('') + '</div>';
     },
 
     pasangGrid: function (el) {
       Array.prototype.forEach.call(el.querySelectorAll('[data-locked]'), function (b) {
         b.onclick = function () { UI.toast(b.getAttribute('data-locked') || 'Menu terkunci.', 'warn', 'Layanan Terkunci'); };
+      });
+      // v3.4: tombol "Isi & Cetak" pada bagian Formulir Siap Cetak
+      Array.prototype.forEach.call(el.querySelectorAll('[data-cetak]'), function (b) {
+        b.onclick = function () { M.cetakBlanko(b.getAttribute('data-cetak')); };
       });
     },
 
@@ -389,7 +438,7 @@
       el.innerHTML = '<div class="page-head"><div>' +
         '<div class="crumb">' + ik('home', 12) + ' Beranda <span class="sep">/</span> <span class="cur">Layanan Akademik</span></div>' +
         '<h2>Ajukan Layanan</h2><div class="desc">Pilih layanan akademik yang ingin Anda ajukan.</div></div></div>' +
-        M.gridLayanan().replace('<div class="sec-head">', '<div class="sec-head" style="margin-top:0">');
+        M.gridLayanan().replace('<div class="sec-head sec4">', '<div class="sec-head sec4" style="margin-top:0">') + M.blokFormulirCetak();
       M.pasangGrid(el);
     },
 

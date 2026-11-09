@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://drive.google.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
-<link rel="stylesheet" href="assets/css/style.css?v=3.3.0">
+<link rel="stylesheet" href="assets/css/style.css?v=3.4.0">
 <!-- Font dimuat non-blocking agar teks tampil seketika memakai font sistem. -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
       media="print" onload="this.media='all'">
@@ -48,8 +48,8 @@
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
       </div>
       <div class="brand-txt">
-        <div class="t1">SIAKAD Surat</div>
-        <div class="t2">STIS Al Wafa</div>
+        <div class="t1">SIAKAD Surat <span class="lp-online hidden" id="lp-online">Online</span></div>
+        <div class="t2">STIS Al Wafa<span class="lp-ta-m"> • <b id="lp-ta-nav"></b></span></div>
       </div>
     </div>
     <div class="grow"></div>
@@ -59,17 +59,11 @@
   <main class="landing-main lp2-main">
     <div class="landing-inner lp2">
 
-      <!-- ------------------------------------------------------- Sambutan -->
+      <!-- ------------------------------------------------------- Sambutan (v3.4: sesuai contoh Revisi 5) -->
       <section class="lp2-hero">
-        <span class="eyebrow"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg> Biro Administrasi Akademik (BAAK)</span>
-        <h1>Layanan Persuratan <span>Akademik</span></h1>
-        <p>Ajukan surat keterangan aktif, magang, izin penelitian, seminar proposal hingga skripsi dan
-           administrasi kelulusan — cepat, terpantau, dan dokumen terbit dengan QR verifikasi.</p>
-        <div class="lp2-chips">
-          <span class="lp2-chip"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 14.5l2 2 4-4"/></svg> Dokumen ber-QR</span>
-          <span class="lp2-chip"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> Verifikasi 1×24 jam kerja</span>
-          <span class="lp2-chip"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M11 18h2"/></svg> Nyaman di HP</span>
-        </div>
+        <span class="eyebrow"><span class="dot"></span> Biro Administrasi Akademik (BAAK)</span>
+        <h1>Layanan Persuratan Akademik</h1>
+        <p>Pengajuan dokumen dan administrasi akademik mahasiswa terpadu &amp; cepat.</p>
       </section>
 
       <!-- --------------------------------------------------------- Masuk -->
@@ -88,35 +82,35 @@
 
           <!-- Login mahasiswa -->
           <div class="card-body" id="form-mhs">
-            <div class="login-ava ic3d tone-orange"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 9-10-5L2 9l10 5z"/><path d="M6 11.5V16c0 1.5 2.7 3 6 3s6-1.5 6-3v-4.5"/></svg></div>
-            <h3>Masuk Portal Mahasiswa</h3>
-            <p class="small muted mb2">Cukup NIM dan Tahun Masuk sesuai data induk kampus — tanpa kata sandi.</p>
+            <h3 class="lp-judul">Masuk Pengajuan</h3>
+            <p class="small muted mb2">Masukkan NIM dan tahun masuk Anda untuk melanjutkan.</p>
             <form id="login-mhs" autocomplete="on" novalidate>
               <div class="field">
                 <label for="in-nim">Nomor Induk Mahasiswa (NIM) <span class="req">*</span></label>
                 <div class="input-icon">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M7 10h4M7 14h7"/></svg>
-                  <input class="input" id="in-nim" name="nim" inputmode="decimal" autocomplete="username"
-                         placeholder="Contoh: 20210801042 atau 22.23.0001" maxlength="30" required>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="11" r="2"/><path d="M5 16c.6-1.3 1.7-2 3-2s2.4.7 3 2M14 10h5M14 13.5h4"/></svg>
+                  <input class="input" id="in-nim" name="nim" inputmode="text" autocomplete="username"
+                         placeholder="Contoh: 22.23.2.10" maxlength="30" required>
                 </div>
               </div>
               <div class="field">
-                <label for="in-tahun">Tahun Masuk (PIN Verifikasi) <span class="req">*</span>
-                  <span class="muted" style="float:right;font-weight:600">4 digit angkatan</span>
-                </label>
+                <label for="in-tahun">Tahun Masuk (PIN Verifikasi) <span class="req">*</span></label>
                 <div class="input-icon">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>
                   <input class="input" id="in-tahun" name="tahunMasuk" inputmode="numeric" autocomplete="current-password"
                          placeholder="Contoh: 2021" maxlength="4" required>
                 </div>
               </div>
-              <button class="btn btn-primary btn-block btn-lg" type="submit" id="btn-login-mhs">
-                Masuk ke Portal
+              <button class="btn btn-primary btn-block btn-lg lp-masuk" type="submit" id="btn-login-mhs">
+                Masuk ke Sistem
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
               </button>
             </form>
-            <div class="login-aman"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-              <span>Data diverifikasi otomatis dengan basis data induk STIS Al Wafa.</span></div>
+            <div class="lp-kendala">
+              <span>Kendala login NIM?</span>
+              <a id="lp-hubungi" href="#" target="_blank" rel="noopener">Hubungi Admin BAAK
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M8 7h9v9"/></svg></a>
+            </div>
             <div class="login-sep">
               <button class="btn-link" id="btn-cek-surat" type="button">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM20 14v3M14 20h3M20 20h1"/></svg>
@@ -127,8 +121,7 @@
 
           <!-- Login admin -->
           <div class="card-body hidden" id="form-adm">
-            <div class="login-ava ic3d tone-slate"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></div>
-            <h3>Masuk Panel BAAK</h3>
+            <h3 class="lp-judul">Masuk Panel BAAK</h3>
             <p class="small muted mb2">Khusus tim Biro Administrasi Akademik dan Kemahasiswaan.</p>
             <form id="login-adm" autocomplete="on" novalidate>
               <div class="field">
@@ -158,42 +151,40 @@
         </div>
       </aside>
 
-      <!-- ------------------------------------------------- Alur pengajuan -->
-      <section class="card lp2-alur">
-        <div class="card-head"><div><h3>Alur Pengajuan Surat</h3>
-          <div class="sub">Empat langkah mudah dari mana saja</div></div></div>
-        <div class="card-body">
-          <div class="alur-grid">
-            <div class="alur-item"><span class="no">01</span><div class="ic3d tone-blue"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8.5" cy="11" r="2"/><path d="M5.5 16c.6-1.3 1.7-2 3-2s2.4.7 3 2M14 10h5M14 13.5h4"/></svg></div>
-              <div class="t">Masuk</div><div class="d">NIM &amp; Tahun Masuk</div></div>
-            <div class="alur-item"><span class="no">02</span><div class="ic3d tone-violet"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>
-              <div class="t">Pilih Layanan</div><div class="d">Sesuai kebutuhan Anda</div></div>
-            <div class="alur-item"><span class="no">03</span><div class="ic3d tone-orange"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></div>
-              <div class="t">Isi Formulir</div><div class="d">Lengkapi data &amp; berkas</div></div>
-            <div class="alur-item"><span class="no">04</span><div class="ic3d tone-green"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 11l5 5 5-5M12 16V4"/></svg></div>
-              <div class="t">Unduh Dokumen</div><div class="d">PDF resmi ber-QR</div></div>
-          </div>
-        </div>
-      </section>
-
       <!-- --------------------------------------- Ketersediaan layanan -->
       <section class="card lp2-layanan">
         <div class="card-head">
-          <div>
-            <h3>Jadwal &amp; Ketersediaan Layanan</h3>
-            <div class="sub">Layanan yang dapat diajukan pada semester berjalan</div>
-          </div>
+          <h3>Jadwal &amp; Ketersediaan Layanan</h3>
           <span class="badge badge-green" id="lp-jumlah"><span class="dot"></span>—</span>
         </div>
         <div class="card-body">
           <div class="input-icon lp-cari">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>
-            <input class="input" id="lp-cari" type="search" placeholder="Cari layanan… (mis. magang, skripsi)" autocomplete="off">
+            <input class="input" id="lp-cari" type="search" placeholder="Cari jenis surat / izin perkuliahan…" autocomplete="off">
           </div>
           <div id="lp-layanan">
             <div class="sk sk-line" style="width:70%"></div>
             <div class="sk sk-line" style="width:90%"></div>
             <div class="sk sk-line" style="width:60%"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------- Alur pengajuan kilat -->
+      <section class="card lp2-alur">
+        <div class="card-body lp-kilat">
+          <div class="lp-kilat-teks">
+            <span class="lp-kilat-eyebrow">Alur Pengajuan Kilat</span>
+            <h3>Hanya 3 Langkah Pengajuan Surat Resmi</h3>
+            <p class="d-only">Dokumen resmi diterbitkan lengkap dengan QR Code Tanda Tangan Elektronik (TTE) BAAK.</p>
+          </div>
+          <div class="lp-kilat-langkah">
+            <div class="lk"><span class="no n1">1</span><div><div class="t">Login NIM</div>
+              <div class="d"><span class="d-only">Tanpa password rumit.</span><span class="m-only">Verifikasi instan via NIM &amp; PIN angkatan</span></div></div></div>
+            <div class="lk"><span class="no n2">2</span><div><div class="t">Pilih Surat</div>
+              <div class="d"><span class="d-only">Lengkapi tujuan surat.</span><span class="m-only">Pilih format surat &amp; isi detail singkat</span></div></div></div>
+            <div class="lk"><span class="no n3">3</span><div><div class="t">Unduh PDF</div>
+              <div class="d"><span class="d-only">Format resmi ber-TTE.</span><span class="m-only">Unduh surat sah berstempel digital TTE</span></div></div></div>
           </div>
         </div>
       </section>
@@ -249,14 +240,21 @@
         <button class="hamb tb-back" id="mhs-kembali" aria-label="Kembali ke beranda">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>
         </button>
+        <!-- v3.4: identitas aplikasi pada beranda HP (sesuai contoh Revisi 5) -->
+        <div class="tb-brand-mhs">
+          <span class="brand-logo"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 9-10-5L2 9l10 5z"/><path d="M6 11.5V16c0 1.5 2.7 3 6 3s6-1.5 6-3v-4.5"/></svg></span>
+          <span class="tbm-txt"><span class="t1">SIAKAD Surat</span><span class="t2">STIS AL WAFA</span></span>
+        </div>
         <div class="grow" style="min-width:0">
           <div class="tb-title truncate" id="mhs-judul">Beranda</div>
           <div class="tb-sub truncate" id="mhs-sub">Portal Persuratan STIS Al Wafa</div>
         </div>
+        <span class="tb-ta" id="mhs-tb-ta"></span>
         <span class="sync-dot"><span class="d"></span><span class="t">Tersinkron</span></span>
         <button class="btn btn-ghost btn-sm" id="mhs-segarkan" title="Muat ulang data">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
         </button>
+        <button class="tb-ava" type="button" data-nav="mhsview" data-view="profil" id="mhs-tb-ava" aria-label="Profil saya">--</button>
         <button class="hamb tb-more" id="mhs-menu-lain" aria-label="Menu lainnya">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/></svg>
         </button>
@@ -269,7 +267,7 @@
 
 <!-- ============================================================== ADMIN -->
 <div class="screen" id="screen-adm">
-  <div class="shell" id="adm-shell">
+  <div class="shell has-bottomnav" id="adm-shell">
     <aside class="sidebar" id="adm-sidebar" aria-label="Menu admin">
       <div class="sidebar-head">
         <div class="brand">
@@ -303,14 +301,29 @@
         <div class="grow" style="min-width:0">
           <div class="tb-title truncate" id="adm-judul">Ringkasan &amp; Statistik</div>
           <div class="tb-sub truncate" id="adm-sub">Pusat komando BAAK</div>
+          <!-- v3.4: identitas aplikasi pada bilah atas HP -->
+          <div class="tb-brand-m"><div class="t1">SIAKAD Surat <span class="tb-baak">BAAK</span></div>
+            <div class="t2 truncate" id="adm-sub-m">Pusat komando BAAK</div></div>
         </div>
         <span class="sync-dot"><span class="d"></span><span class="t">Tersinkron</span></span>
-        <button class="btn btn-ghost btn-sm" id="adm-segarkan">
+        <button class="btn btn-ghost btn-sm" id="adm-segarkan" title="Segarkan data">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
           <span class="hide-sm">Segarkan</span>
         </button>
       </header>
       <div class="content" id="admview"></div>
+    </div>
+  </div>
+  <!-- v3.4 (Revisi 6): navigasi bawah & lembar menu untuk HP -->
+  <nav class="bottomnav on adm-bn" id="adm-bottomnav" aria-label="Navigasi cepat admin"></nav>
+  <div class="sheet-bg" id="adm-sheet" aria-hidden="true">
+    <div class="sheet" role="dialog" aria-labelledby="adm-sheet-judul">
+      <div class="sheet-grip"></div>
+      <div class="sheet-head"><h3 id="adm-sheet-judul">Menu</h3>
+        <button class="x-btn" data-tutup-sheet aria-label="Tutup">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button></div>
+      <div class="sheet-body" id="adm-sheet-isi"></div>
     </div>
   </div>
 </div>
@@ -357,10 +370,10 @@
 })();
 </script>
 
-<script src="assets/js/01-core.js?v=3.3.0"></script>
-<script src="assets/js/02-landing.js?v=3.3.0"></script>
-<script src="assets/js/03-mahasiswa.js?v=3.3.0"></script>
-<script src="assets/js/05-app.js?v=3.3.0"></script>
+<script src="assets/js/01-core.js?v=3.4.0"></script>
+<script src="assets/js/02-landing.js?v=3.4.0"></script>
+<script src="assets/js/03-mahasiswa.js?v=3.4.0"></script>
+<script src="assets/js/05-app.js?v=3.4.0"></script>
 
 <script>
 /* Service worker: cangkang aplikasi disimpan di perangkat sehingga kunjungan

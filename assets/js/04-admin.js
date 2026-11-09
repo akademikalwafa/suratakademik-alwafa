@@ -18,7 +18,7 @@
     { k: 'SEMPRO', set: ['SEMPRO'], n: 'Seminar Proposal', i: 'presentation', d: 'Pendaftaran seminar proposal — tetapkan penguji, tanggal, jam & tempat. Simpan Jadwal sekaligus menyetujui.', jadwal: true },
     { k: 'REVISI_SEMPRO', set: ['REVISI_SEMPRO'], n: 'Revisi Seminar Proposal', i: 'edit', d: 'Verifikasi revisi, tetapkan dosen pembimbing, terbitkan & kirim SK Pembimbing + Kartu Bimbingan.', kirim: ['SK_PEMBIMBING', 'F_KARTU_BIMBINGAN'], filterKirim: 'SK belum dikirim' },
     { k: 'SIDANG', set: ['SIDANG'], n: 'Sidang Skripsi', i: 'graduation', d: 'Penetapan penguji & jadwal sidang, IPK & predikat, lalu kirim SKL & Lembar Pengesahan Skripsi.', jadwal: true, kirim: ['SKL', 'LEMBAR_PENGESAHAN'], filterKirim: 'SKL belum dikirim' },
-    { k: 'REVISI_SIDANG', set: ['REVISI_SIDANG'], n: 'Revisi Sidang Skripsi', i: 'fileCheck', d: 'Verifikasi revisi skripsi — terbit Formulir Pernyataan Penyerahan Skripsi & Bebas Perpustakaan.' },
+    { k: 'REVISI_SIDANG', set: ['REVISI_SIDANG'], n: 'Revisi Sidang Skripsi', i: 'fileCheck', d: 'Verifikasi revisi skripsi — terbit Formulir Pernyataan Penyerahan Skripsi & Bebas Perpustakaan.', filterIpk: 'Belum input IPK' },
     { k: 'PERBAIKAN_NILAI', set: ['PERBAIKAN_NILAI'], n: 'Perbaikan Nilai', i: 'edit', d: 'Verifikasi bukti transfer & penerbitan formulir ujian remedial.' }
   ];
 
@@ -52,6 +52,21 @@
     { k: 'pengaturan', n: 'Pengaturan Aplikasi', i: 'settings' },
     { k: 'log', n: 'Log Aktivitas', i: 'list' }
   ];
+
+  // v3.4 (Revisi 6): navigasi bawah HP — setiap tab membuka lembar berisi kelompok menunya.
+  var TAB_BN = [
+    { k: 'dash', n: 'Dashboard', i: 'grid', g: ['Menu Utama'], j: 'Dashboard' },
+    { k: 'antrean', n: 'Antrean', i: 'inbox', g: ['Antrean Persuratan'], j: 'Antrean Persuratan' },
+    { k: 'akademik', n: 'Akademik', i: 'graduation', g: ['Akademik & Kelulusan'], j: 'Akademik & Kelulusan' },
+    { k: 'admin', n: 'Admin', i: 'user', g: ['Master Data', 'Administrasi Sistem'], j: 'Admin & Master Data' }
+  ];
+  var GRUP_MENU = {};
+  (function () { var g = ''; NAV.forEach(function (m) { if (m.g) g = m.g; else GRUP_MENU[m.k] = g; }); })();
+  function tabMenu(k) {
+    var g = GRUP_MENU[k], hit = 'dash';
+    TAB_BN.forEach(function (t) { if (t.g.indexOf(g) >= 0) hit = t.k; });
+    return hit;
+  }
 
   // View yang memuat datanya sendiri (SWR per menu) — tidak digambar ulang ketika
   // data dashboard berubah, agar pencarian & filter admin tidak ter-reset.
@@ -288,6 +303,7 @@
       };
       bd.onclick = function () { sb.classList.remove('open'); bd.classList.remove('show'); };
       document.getElementById('adm-keluar').onclick = S.App.keluar;
+      A.bangunNavBawah();   // v3.4: navigasi bawah & lembar menu (HP)
       document.getElementById('adm-segarkan').onclick = function () {
         // menu lain diambil segar (_fresh) saat dibuka berikutnya
         A.segarSub = { muatMahasiswa: 1, muatLog: 1, suratTugasTerbit: 1, crmList: 1, blastList: 1, notifConfig: 1, rekapMagang: 1, rekapSkripsi: 1 };
@@ -313,7 +329,97 @@
       document.getElementById('adm-sub').textContent = a ? a.d : 'Panel Biro Administrasi Akademik';
       document.getElementById('adm-sidebar').classList.remove('open');
       document.getElementById('adm-backdrop').classList.remove('show');
+      var subM = document.getElementById('adm-sub-m');
+      if (subM) subM.textContent = kunci === 'ringkasan' ? 'Pusat komando BAAK' : m.n;
+      A.tutupLembar();
       if (kunci === 'ringkasan') A.gambarChart();
+    },
+
+    /* ------------------------------------------- v3.4 navigasi bawah HP */
+
+    bangunNavBawah: function () {
+      var bn = document.getElementById('adm-bottomnav');
+      if (!bn) return;
+      bn.innerHTML = TAB_BN.map(function (t) {
+        return '<button class="bn-item" data-bn="' + t.k + '"><span class="bn-ic">' +
+          (t.k === 'admin' ? '<span class="bn-ava" id="adm-bn-ava">AB</span>' : ik(t.i, 19)) +
+          '<span class="bn-dot" data-bn-dot="' + t.k + '"></span></span>' + F.esc(t.n) + '</button>';
+      }).join('');
+      Array.prototype.forEach.call(bn.querySelectorAll('[data-bn]'), function (b) {
+        b.onclick = function () {
+          var k = b.getAttribute('data-bn');
+          if (k === 'dash') { A.tutupLembar(); return A.pergi('ringkasan'); }
+          if (A._lembar === k) return A.tutupLembar();
+          A.bukaLembar(k);
+        };
+      });
+      var sh = document.getElementById('adm-sheet');
+      if (sh) sh.onclick = function (e) {
+        if (e.target === sh || (e.target.closest && e.target.closest('[data-tutup-sheet]'))) A.tutupLembar();
+      };
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && A._lembar) A.tutupLembar(); });
+      A.tandaiNavBawah();
+    },
+
+    /** Jumlah pengajuan menunggu per tab (titik merah hanya bila > 0). */
+    jumlahTab: function (tab) {
+      var h = A._hitungNav || {}, n = 0;
+      NAV.forEach(function (m) { if (m.k && m.c && tabMenu(m.k) === tab) n += (h[m.c] || 0); });
+      return n;
+    },
+
+    tandaiNavBawah: function () {
+      var aktif = A._lembar || tabMenu(A.aktif || 'ringkasan');
+      Array.prototype.forEach.call(document.querySelectorAll('#adm-bottomnav [data-bn]'), function (b) {
+        var k = b.getAttribute('data-bn');
+        b.classList.toggle('active', k === aktif);
+        var dot = b.querySelector('[data-bn-dot]');
+        if (dot) dot.classList.toggle('on', k !== 'dash' && A.jumlahTab(k) > 0);
+      });
+    },
+
+    bukaLembar: function (tab) {
+      var t = TAB_BN.filter(function (x) { return x.k === tab; })[0];
+      var sh = document.getElementById('adm-sheet');
+      if (!t || !sh) return;
+      var h = A._hitungNav || {}, prof = (A.D && A.D.profil) || {};
+      var isi = t.g.map(function (g) {
+        var item = NAV.filter(function (m) { return m.k && GRUP_MENU[m.k] === g; });
+        return (t.g.length > 1 ? '<div class="sheet-grp">' + F.esc(g) + '</div>' : '') + '<div class="sheet-list">' + item.map(function (m) {
+          var n = m.c ? (h[m.c] || 0) : 0;
+          return '<button class="sheet-item' + (A.aktif === m.k ? ' active' : '') + '" data-nav="admview" data-view="' + m.k + '">' +
+            '<span class="si-ic">' + ik(m.i, 17) + '</span><span class="si-nm">' + F.esc(m.n) + '</span>' +
+            (n > 0 ? '<span class="cnt">' + n + '</span>' : '') + '<span class="si-ch">' + ik('chevronRight', 15) + '</span></button>';
+        }).join('') + '</div>';
+      }).join('');
+      if (tab === 'admin') {
+        isi = '<div class="sheet-profil"><span class="bn-ava lg">' + F.esc(F.inisial(prof.nama || 'Admin BAAK')) + '</span>' +
+          '<div class="grow" style="min-width:0"><div class="bold truncate">' + F.esc(prof.nama || 'Admin') + '</div>' +
+          '<div class="tiny muted">Administrator BAAK</div></div>' +
+          '<button class="btn btn-ghost btn-sm" data-keluar-sheet>' + ik('logout', 14) + 'Keluar</button></div>' + isi;
+      }
+      document.getElementById('adm-sheet-judul').textContent = t.j;
+      var box = document.getElementById('adm-sheet-isi');
+      box.innerHTML = isi;
+      var kel = box.querySelector('[data-keluar-sheet]');
+      if (kel) kel.onclick = function () { A.tutupLembar(); S.App.keluar(); };
+      sh.classList.add('show');
+      A._lembar = tab;
+      A.tandaiNavBawah();
+    },
+
+    tutupLembar: function () {
+      var sh = document.getElementById('adm-sheet');
+      if (sh) sh.classList.remove('show');
+      A._lembar = null;
+      A.tandaiNavBawah();
+    },
+
+    /** Gulir halaman ke elemen (memperhitungkan bilah atas yang menempel). */
+    gulirKe: function (el) {
+      if (!el) return;
+      var top = el.getBoundingClientRect().top + (window.pageYOffset || 0) - 72;
+      try { window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' }); } catch (e) { window.scrollTo(0, Math.max(0, top)); }
     },
 
     /* ==================================================================
@@ -343,6 +449,11 @@
         el.textContent = n;
         el.classList.toggle('zero', n === 0);
       });
+      // v3.4: titik notifikasi navigasi bawah HP (angka 0 tidak pernah ditampilkan)
+      A._hitungNav = hitung;
+      var bnAva = document.getElementById('adm-bn-ava');
+      if (bnAva) bnAva.textContent = F.inisial(d.profil.nama);
+      A.tandaiNavBawah();
 
       // Tandai semua view perlu digambar ulang; hanya view aktif yang
       // benar-benar digambar sekarang → sinkronisasi tidak menahan antarmuka.
@@ -384,16 +495,39 @@
       var ta = d.tahunAkademik;
 
       var kpi = [
-        ['Total Mahasiswa', r.totalMahasiswa, 'Aktif terdaftar', 'k-navy', 'users'],
+        ['Total Mahasiswa', r.totalMahasiswa, 'Aktif terdaftar', 'k-navy', 'users', 'kpi-lebar'],
         ['Antrean Baru', r.antreanBaru, 'Perlu verifikasi hari ini', 'k-orange', 'inbox'],
         ['Disetujui Hari Ini', r.disetujuiHariIni, 'Dokumen sah ber-QR', 'k-green', 'checkCircle'],
         ['Ditolak / Revisi', r.ditolak, 'Alasan tercatat', 'k-red', 'xCircle'],
         ['Pengajuan Magang', r.magang, 'Total sepanjang periode', 'k-blue', 'briefcase'],
-        ['Dokumen Terbit', r.suratTerbit, 'Total PDF ber-QR', 'k-orange', 'file']
+        ['Dokumen Terbit', r.suratTerbit, 'Total PDF ber-QR', 'k-orange', 'file', 'kpi-lebar kpi-baris', 'Surat']
       ];
 
+      // v3.4 (Revisi 6): Akses Cepat Verifikasi — hanya antrean yang berisi (angka 0 tidak ditampilkan).
+      var hNav = A._hitungNav || {};
+      var cepat = NAV.filter(function (m) { return m.k && m.c && (hNav[m.c] || 0) > 0; })
+        .sort(function (a, b) { return (hNav[b.c] || 0) - (hNav[a.c] || 0); });
+      var WARNA_CEPAT = ['#E8590C', '#E03131', '#5C7CFA', '#F59F00', '#0CA678', '#7048E8', '#1C7ED6', '#D6336C'];
+      var kartuCepat =
+        '<div class="card mt3 akses-cepat"><div class="card-head"><h3>Akses Cepat Verifikasi</h3>' +
+        '<button class="btn-link" data-bn-buka="antrean">Lihat Semua</button></div><div class="card-body">' +
+        (cepat.length
+          ? '<div class="cepat-grid">' + cepat.map(function (m, i) {
+            return '<button class="cepat" data-nav="admview" data-view="' + m.k + '"><span class="dot" style="background:' + WARNA_CEPAT[i % WARNA_CEPAT.length] + '"></span>' +
+              '<span class="nm">' + F.esc(m.n) + '</span><span class="cnt">' + hNav[m.c] + '</span></button>';
+          }).join('') + '</div>'
+          : '<div class="small muted">' + ik('checkCircle', 15) + ' Tidak ada antrean yang menunggu verifikasi.</div>') +
+        '</div></div>';
+
       var html =
-        '<div class="page-head"><div>' +
+        // v3.4: kartu sambutan (HP) — tampilan desktop tetap memakai judul halaman di bawahnya
+        '<div class="card sambut m-only mb2"><div class="card-body">' +
+        '<div class="between"><div class="sambut-crumb">Panel BAAK <span class="sep">•</span> <span class="cur">Live Portal Terintegrasi</span></div>' +
+        '<span class="badge badge-green"><span class="dot"></span>Aktif</span></div>' +
+        '<h2>Selamat Datang, ' + F.esc((d.profil.nama || '').split(' ')[0]) + '</h2>' +
+        '<div class="desc">Sistem Informasi Administrasi Persuratan Mahasiswa ' + F.esc(d.konfigurasi.INSTITUSI || 'STIS Al Wafa') + '</div>' +
+        '<div class="sambut-ta"><span>Tahun Akademik:</span><b>' + F.esc(ta.label) + ' ' + F.esc(ta.tipe) + '</b></div></div></div>' +
+        '<div class="page-head d-only"><div>' +
         '<div class="crumb">' + ik('shield', 12) + ' Panel BAAK <span class="sep">/</span> <span class="cur">Live Portal Terintegrasi</span></div>' +
         '<h2>Selamat Datang, ' + F.esc((d.profil.nama || '').split(' ')[0]) + '</h2>' +
         '<div class="desc">Sistem Informasi Administrasi Persuratan Mahasiswa ' +
@@ -408,15 +542,20 @@
             'Jalankan fungsi <span class="mono">migrasiStruktur()</span> lalu <span class="mono">setupV33()</span> sekali dari editor Apps Script ' +
             '(lihat Panduan bagian D9).</span></div>' : '') +
 
-        '<div class="kpi-grid mb3">' + kpi.map(function (x) {
-          return '<div class="kpi ' + x[3] + (x[3] === 'k-navy' ? ' dark' : '') + '">' +
+        '<div class="kpi-grid mb3 kpi-dash">' + kpi.map(function (x) {
+          return '<div class="kpi ' + x[3] + (x[3] === 'k-navy' ? ' dark' : '') + (x[5] ? ' ' + x[5] : '') + '">' +
             '<div class="kpi-icon">' + ik(x[4], 16) + '</div>' +
             '<div class="kpi-label">' + F.esc(x[0]) + '</div>' +
-            '<div class="kpi-value">' + x[1] + '</div>' +
+            '<div class="kpi-value">' + x[1] + (x[6] ? '<small class="m-only">' + x[6] + '</small>' : '') + '</div>' +
             '<div class="kpi-note">' + F.esc(x[2]) + '</div></div>';
         }).join('') + '</div>' +
+        // v3.4: kartu kecil (HP) — Sudah Magang & Diterima Instansi
+        '<div class="mini-kartu m-only mb3">' +
+        '<div class="mk"><span class="mk-ic hijau">' + ik('check', 16) + '</span><div><div class="l">Sudah Magang</div><div class="v">' + ((st.kpi || {}).sudahMagang || 0) + ' <small>mhs</small></div></div></div>' +
+        '<div class="mk"><span class="mk-ic biru">' + ik('building', 16) + '</span><div><div class="l">Diterima Instansi</div><div class="v">' + ((st.kpi || {}).diterimaMagang || 0) + ' <small>mhs</small></div></div></div>' +
+        '</div>' +
 
-        '<div class="split">' +
+        '<div class="split rk-split">' +
 
         '<div class="card"><div class="card-head"><div><h3>Rekapitulasi Mahasiswa per Angkatan</h3>' +
         '<div class="sub">Distribusi persebaran mahasiswa aktif menurut program studi</div></div>' +
@@ -433,6 +572,7 @@
         '<div class="card-body"><div class="chart-box sm"><canvas id="ch-tren"></canvas></div></div></div>' +
         '</div></div>' +
 
+        kartuCepat +
         '<div class="card mt3"><div class="card-head"><h3>Tindakan Cepat</h3></div><div class="card-body">' +
         '<div class="row-wrap">' +
         '<button class="btn btn-primary" data-nav="admview" data-view="q_SURAT_AKTIF">' + ik('doc', 15) + 'Verifikasi Surat Aktif (' + (r.perJenis.SURAT_AKTIF ? r.perJenis.SURAT_AKTIF.menunggu : 0) + ')</button>' +
@@ -464,6 +604,7 @@
           }).join('') +
           '<td class="right bold" style="color:var(--orange-600)">' + total + '</td></tr>' +
           '</tbody></table></div>' +
+          '<div class="m-only tiny muted mt1 between"><span>' + ik('chevronLeft', 11) + ' Geser tabel untuk angkatan lampau</span><span>Update berkala</span></div>' +
           '<div class="mini-stat mt2">' +
           [['Sudah Magang', s.kpi.sudahMagang], ['Diterima Instansi', s.kpi.diterimaMagang],
           ['Sudah Sempro', s.kpi.sudahSempro], ['Sudah Sidang', s.kpi.sudahSidang],
@@ -485,6 +626,9 @@
       };
 
       el.querySelector('#rk-unduh').onclick = A.unduhRekapCsv;
+      Array.prototype.forEach.call(el.querySelectorAll('[data-bn-buka]'), function (b) {
+        b.onclick = function () { A.bukaLembar(b.getAttribute('data-bn-buka')); };
+      });
       A.gambarChart();
     },
 
@@ -661,6 +805,21 @@
           .replace('{tahun}', new Date().getFullYear())
         : '—';
 
+      // v3.4: filter tersimpan per antrean (tidak kembali ke "Menunggu" saat data latar diperbarui)
+      A.filterQ = A.filterQ || {};
+      var daftarFilter = ['Menunggu', 'Semua', 'Disetujui', 'Ditolak']
+        .concat(cfg.filterKirim ? [cfg.filterKirim] : []).concat(cfg.filterIpk ? [cfg.filterIpk] : []);
+      var filterAwal = daftarFilter.indexOf(A.filterQ[cfg.k]) >= 0 ? A.filterQ[cfg.k] : 'Menunggu';
+      function lolosFilter(r, f) {
+        if (f === 'Menunggu' && r.status !== 'MENUNGGU') return false;
+        if (f === 'Disetujui' && r.status !== 'DISETUJUI') return false;
+        if (f === 'Ditolak' && r.status !== 'DITOLAK') return false;
+        if (cfg.filterKirim && f === cfg.filterKirim && !A.belumDikirim(cfg, r)) return false;
+        if (cfg.filterIpk && f === cfg.filterIpk && !A.belumIpk(r)) return false;
+        return true;
+      }
+      function jumlahFilter(f) { return semua.filter(function (r) { return lolosFilter(r, f); }).length; }
+
       var st = { menunggu: 0, disetujui: 0, ditolak: 0, total: 0 };
       cfg.set.forEach(function (j) {
         var x = d.ringkasan.perJenis[j];
@@ -679,8 +838,8 @@
         (cfg.jadwal || cfg.kirim ? '' : '<button class="btn btn-dark btn-sm" data-massal="' + cfg.k + '" disabled>' + ik('check', 14) + 'Batch Approve (<span data-jml>0</span>)</button>') +
         '</div></div>' +
 
-        '<div class="kpi-grid mb3">' +
-        '<div class="kpi k-orange"><div class="kpi-icon">' + ik('inbox', 16) + '</div>' +
+        '<div class="kpi-grid mb3 kpi-antre">' +
+        '<div class="kpi k-orange' + (st.menunggu > 0 ? ' kpi-sorot' : '') + '"><div class="kpi-icon">' + ik('inbox', 16) + '</div>' +
         '<div class="kpi-label">Menunggu Verifikasi</div><div class="kpi-value">' + st.menunggu + '</div>' +
         '<div class="kpi-note">Perlu tindakan BAAK</div></div>' +
         '<div class="kpi k-green"><div class="kpi-icon">' + ik('checkCircle', 16) + '</div>' +
@@ -694,6 +853,12 @@
             '<div class="kpi-label">' + F.esc(cfg.filterKirim) + '</div>' +
             '<div class="kpi-value">' + semua.filter(function (r) { return A.belumDikirim(cfg, r); }).length + '</div>' +
             '<div class="kpi-note">Tampil ke mahasiswa setelah dikirim</div></div>'
+          : cfg.filterIpk
+          // v3.4 (Revisi 6): Revisi Sidang — revisi yang IPK sidangnya belum diinput
+          ? '<div class="kpi dark"><div class="kpi-icon">' + ik('alert', 16) + '</div>' +
+            '<div class="kpi-label">' + F.esc(cfg.filterIpk) + '</div>' +
+            '<div class="kpi-value">' + jumlahFilter(cfg.filterIpk) + '</div>' +
+            '<div class="kpi-note">IPK diisi di menu Sidang Skripsi' + (nomorAktif !== '—' ? ' • No. berikutnya <span class="mono">' + F.esc(nomorAktif) + '</span>' : '') + '</div></div>'
           : '<div class="kpi dark"><div class="kpi-icon">' + ik('file', 16) + '</div>' +
             '<div class="kpi-label">Nomor Surat Berikutnya</div>' +
             '<div class="kpi-value" style="font-size:16px;font-family:var(--ff-mono);margin-top:10px">' + F.esc(nomorAktif) + '</div>' +
@@ -706,10 +871,11 @@
         '<div class="sub"><span data-hitung>' + menunggu.length + '</span> perlu verifikasi</div></div></div>' +
         '<div class="card-body" style="padding:14px 16px;border-bottom:1px solid var(--line)">' +
         '<div class="input-icon mb1">' + ik('search', 16) +
-        '<input class="input" data-cari placeholder="Cari nama mahasiswa, NIM, atau instansi…"></div>' +
-        '<div class="row-wrap" data-filter>' +
-        ['Menunggu', 'Semua', 'Disetujui', 'Ditolak'].concat(cfg.filterKirim ? [cfg.filterKirim] : []).map(function (x, i) {
-          return '<button class="btn btn-sm ' + (i === 0 ? 'btn-primary' : 'btn-ghost') + '" data-f="' + x + '">' + x + '</button>';
+        '<input class="input" type="search" data-cari placeholder="Cari nama mahasiswa, NIM, atau judul…"></div>' +
+        '<div class="row-wrap chip-row" data-filter>' +
+        daftarFilter.map(function (x) {
+          return '<button class="btn btn-sm ' + (x === filterAwal ? 'btn-primary' : 'btn-ghost') + '" data-f="' + x + '">' + x +
+            ' <span class="chip-n">(' + jumlahFilter(x) + ')</span></button>';
         }).join('') + '</div></div>' +
         '<div class="queue-list" data-list></div></div>' +
 
@@ -719,17 +885,14 @@
         '</div></div></div>' +
         '</div>';
 
-      var filter = 'Menunggu', kueri = '', dipilih = {};
+      var filter = filterAwal, kueri = '', dipilih = {};
       var listEl = el.querySelector('[data-list]');
       var detailEl = el.querySelector('[data-detail]');
       var btnMassal = el.querySelector('[data-massal]');
 
       function terfilter() {
         return semua.filter(function (r) {
-          if (filter === 'Menunggu' && r.status !== 'MENUNGGU') return false;
-          if (filter === 'Disetujui' && r.status !== 'DISETUJUI') return false;
-          if (filter === 'Ditolak' && r.status !== 'DITOLAK') return false;
-          if (cfg.filterKirim && filter === cfg.filterKirim && !A.belumDikirim(cfg, r)) return false;
+          if (!lolosFilter(r, filter)) return false;
           return S.cocok(r, kueri, ['nama', 'nim', 'prodi', 'nomorSurat']) ||
             (kueri && JSON.stringify(r.data || {}).toLowerCase().indexOf(kueri.toLowerCase()) >= 0);
         });
@@ -759,7 +922,8 @@
             '</div>' +
             '<div style="flex:none;text-align:right">' + F.statusBadge(r.status) +
             (r.nomorSurat ? '<div class="tiny mono muted mt1">' + F.esc(r.nomorSurat) + '</div>' : '') +
-            (A.belumDikirim(cfg, r) ? '<div class="mt1"><span class="badge badge-amber">' + ik('send', 10) + ' Belum dikirim</span></div>' : '') + '</div>' +
+            (A.belumDikirim(cfg, r) ? '<div class="mt1"><span class="badge badge-amber">' + ik('send', 10) + ' Belum dikirim</span></div>' : '') +
+            (cfg.filterIpk && A.belumIpk(r) ? '<div class="mt1"><span class="badge badge-amber">' + ik('alert', 10) + ' Belum IPK</span></div>' : '') + '</div>' +
             '</div>';
         }).join('');
 
@@ -769,6 +933,7 @@
             A.pilih[cfg.k] = it.getAttribute('data-id');
             gambarList();
             gambarDetail();
+            if (window.innerWidth <= 1180) A.gulirKe(detailEl);   // v3.4: HP — langsung ke panel detail
           };
         });
         Array.prototype.forEach.call(listEl.querySelectorAll('[data-pick]'), function (c) {
@@ -804,7 +969,7 @@
 
       Array.prototype.forEach.call(el.querySelectorAll('[data-filter] [data-f]'), function (b) {
         b.onclick = function () {
-          filter = b.getAttribute('data-f');
+          filter = A.filterQ[cfg.k] = b.getAttribute('data-f');
           Array.prototype.forEach.call(el.querySelectorAll('[data-filter] [data-f]'), function (x) {
             x.className = 'btn btn-sm ' + (x === b ? 'btn-primary' : 'btn-ghost');
           });
@@ -846,6 +1011,28 @@
       var dok = (r.dokumen || []).filter(function (x) { return cfg.kirim.indexOf(x.kode) >= 0; });
       if (!dok.length) return true;
       return dok.some(function (x) { return x.tampilMahasiswa === false; });
+    },
+
+    /**
+     * v3.4 (Revisi 6): Revisi Sidang Skripsi yang IPK sidangnya belum diinput.
+     * Backend v3.4 mengirim r.sidangIpk; backend lama → dicari dari data penguji sidang.
+     */
+    belumIpk: function (r) {
+      if (!r || r.jenis !== 'REVISI_SIDANG' || r.status === 'DITOLAK' || r.status === 'DIBATALKAN') return false;
+      if (r.sidangIpk) return !r.sidangIpk.ipk;
+      return !((A.D && A.D.penguji) || []).some(function (p) {
+        return p.jenis === 'SIDANG' && String(p.nim) === String(r.nim) && p.ipk;
+      });
+    },
+
+    /** ID pendaftaran sidang (aktif) seorang mahasiswa — untuk tombol "Input IPK". */
+    cariSidang: function (r) {
+      if (r.sidangIpk && r.sidangIpk.idSidang) return r.sidangIpk.idSidang;
+      var hit = '';
+      ((A.D && A.D.antrean) || []).concat((A.D && A.D.riwayat) || []).forEach(function (x) {
+        if (!hit && x.jenis === 'SIDANG' && String(x.nim) === String(r.nim) && x.status !== 'DITOLAK' && x.status !== 'DIBATALKAN') hit = x.id;
+      });
+      return hit;
     },
 
     /** Satu baris dokumen dengan tombol Pratinjau + Kirim ke Mahasiswa / badge Terkirim. */
@@ -959,29 +1146,59 @@
       var master = A.D.master;
       var dosenNidn = (master.dosen || []).filter(function (x) { return String(x.kategori).toUpperCase() === 'NIDN' && x.statusAktif; });
 
+      // v3.4 (Revisi 6): kepala panel ringkas & ramah HP — status, nomor, waktu masuk; identitas di badan panel.
+      var labelSt = { MENUNGGU: 'Aktif Direview', DISETUJUI: 'Disetujui', DITOLAK: 'Ditolak', DIBATALKAN: 'Dibatalkan' }[r.status] || r.status;
       var head =
-        '<div class="card" style="overflow:hidden">' +
+        '<div class="card dp-card" style="overflow:hidden">' +
         '<div class="detail-head">' +
-        '<div class="between"><span class="badge badge-orange">' + F.esc(r.status === 'MENUNGGU' ? 'Aktif Direview' : r.status) + '</span>' +
-        '<span class="tiny mono" style="color:rgba(255,255,255,.55)">#' + F.esc(r.id) + '</span></div>' +
-        '<div class="t mt1">' + F.esc(r.nama) + '</div>' +
-        '<div class="s">Pengajuan masuk: ' + F.tglJam(r.tanggalAjukan) + '</div></div>' +
-        '<div class="detail-body">';
+        '<div class="dh-row"><span class="dh-pill' + (r.status === 'MENUNGGU' ? ' on' : '') + '"><span class="dot"></span>' + F.esc(labelSt) + '</span>' +
+        '<span class="dh-id mono">#' + F.esc(r.id) + '</span>' +
+        '<span class="dh-tgl">Masuk: ' + F.tglJam(r.tanggalAjukan) + '</span></div></div>' +
+        '<div class="detail-body">' +
+        '<div class="dp-mhs"><div class="dp-ava">' + F.inisial(r.nama) + '</div>' +
+        '<div class="grow" style="min-width:0"><div class="dp-nm-row"><div class="dp-nm">' + F.esc(r.nama) + '</div>' +
+        '<div class="dp-st">' + F.statusBadge(r.status) + '</div></div>' +
+        '<div class="dp-meta">NIM <b class="mono">' + F.esc(r.nim) + '</b> • ' + F.esc(r.prodiNama || r.prodi) + '</div></div></div>';
 
       // Pemeriksaan otomatis
+      var ipkTerakhir = r.jenis === 'SIDANG' ? (d.ipk || d.ipkAkhir || '') : '';
       var cek =
-        '<div class="mini-stat mb2">' +
-        '<div class="ms"><div class="l">Status Akademik</div><div class="v">Semester ' + r.semester + ' • Aktif</div></div>' +
-        '<div class="ms"><div class="l">Program Studi</div><div class="v" style="font-size:12.5px">' + F.esc(r.prodi) + '</div></div>' +
-        '<div class="ms"><div class="l">NIM</div><div class="v mono">' + F.esc(r.nim) + '</div></div>' +
-        '<div class="ms"><div class="l">Angkatan • Kelas</div><div class="v">' + F.esc(r.tahunMasuk) +
+        '<div class="dp-info mb2">' +
+        '<div><div class="l">Status Akademik</div><div class="v">Semester ' + r.semester + ' • <span class="ok">Aktif</span></div></div>' +
+        '<div><div class="l">Angkatan &amp; Kelas</div><div class="v">' + F.esc(r.tahunMasuk) +
         (r.kelas ? ' • ' + A.labelKelas(r.kelas) : '') + '</div></div>' +
+        '<div><div class="l">Program Studi</div><div class="v">' + F.esc(r.prodi) + '</div></div>' +
+        (ipkTerakhir ? '<div><div class="l">IPK Terakhir</div><div class="v oranye">' + F.esc(ipkTerakhir) + '</div></div>'
+          : '<div><div class="l">NIM</div><div class="v mono">' + F.esc(r.nim) + '</div></div>') +
         '</div>';
 
-      // Rincian data pengajuan
-      var rincian = '<h4 style="font-size:13.5px;margin:4px 0 9px">Rincian Pengajuan</h4><dl class="kv mb2">' +
+      // v3.4: Revisi Sidang — IPK sidang belum diinput (filter "Belum input IPK")
+      if (r.jenis === 'REVISI_SIDANG' && r.status !== 'DITOLAK' && r.status !== 'DIBATALKAN') {
+        var si = r.sidangIpk || null;
+        if (A.belumIpk(r)) {
+          var idSid = A.cariSidang(r);
+          cek += '<div class="notice warn mb2" style="font-size:12.5px">' + ik('alert', 16) +
+            '<span><b>IPK &amp; predikat belum diinput</b> pada menu Sidang Skripsi' +
+            (si && si.tanggalSidang ? ' (sidang ' + F.tgl(si.tanggalSidang) + ')' : '') +
+            '. SKL, SK Kelulusan &amp; Lembar Pengesahan baru terbit setelah IPK disimpan.</span></div>' +
+            (idSid ? '<button class="btn btn-soft btn-block mb2" data-ke-sidang="' + F.esc(idSid) + '">' + ik('graduation', 15) + 'Input IPK di Sidang Skripsi</button>'
+              : '<div class="tiny muted mb2">Pendaftaran sidang mahasiswa ini tidak ditemukan di data terbaru.</div>');
+        } else if (si && si.ipk) {
+          cek += '<div class="notice ok mb2" style="font-size:12.5px">' + ik('checkCircle', 16) +
+            '<span>IPK sidang sudah diinput: <b>' + F.esc(si.ipk) + '</b>' + (si.predikat ? ' — ' + F.esc(si.predikat) : '') + '.</span></div>';
+        }
+      }
+
+      // Rincian data pengajuan — judul disorot (kotak kuning) seperti contoh tampilan HP
+      var kunciJudul = d.judulFinal ? 'judulFinal' : (d.judul ? 'judul' : '');
+      var rincian = '<div class="dp-sub"><h4>Rincian Pengajuan</h4><span class="tiny muted">Diajukan ' + F.relatif(r.tanggalAjukan) + '</span></div>' +
+        (kunciJudul
+          ? '<div class="dp-judul"><div class="l">' + (kunciJudul === 'judulFinal' ? 'Judul Final' : (r.jenis === 'SIDANG' ? 'Judul Skripsi Diajukan' : 'Judul')) + '</div>' +
+            '<div class="v">' + F.esc(d[kunciJudul]) + '</div></div>'
+          : '') +
+        '<dl class="kv mb2">' +
         Object.keys(d).filter(function (k) {
-          return d[k] !== '' && d[k] !== null && d[k] !== undefined && typeof d[k] !== 'object' && k !== 'setuju' &&
+          return d[k] !== '' && d[k] !== null && d[k] !== undefined && typeof d[k] !== 'object' && k !== 'setuju' && k !== kunciJudul &&
             !/Id$|Url$|^skKirim$/.test(k);   // v3.3: ID internal & tautan berkas (ada tombol Pratinjau) tidak diulang
         }).map(function (k) {
           return '<dt>' + F.esc(S.Mahasiswa.labelField(k)) + '</dt><dd>' + F.esc(d[k]) + '</dd>';
@@ -1084,7 +1301,7 @@
         var jamSelesaiAwal = pg.jamSelesai || (pg.jamJadwal ? '' : (sidang ? '11:00' : '10:30'));
         var bisaJadwal = r.status === 'MENUNGGU' || r.status === 'DISETUJUI';
         penguji =
-          '<div style="border:1px solid var(--line);border-radius:12px;padding:14px;margin:14px 0;background:var(--surface-2)">' +
+          '<div class="dp-blok" style="border:1px solid var(--line);border-radius:12px;padding:14px;margin:14px 0;background:var(--surface-2)">' +
           '<div class="between mb2"><h4 style="font-size:13.5px">' + (sidang ? 'PENETAPAN PENGUJI &amp; JADWAL SIDANG SKRIPSI' : 'PENETAPAN PENGUJI &amp; JADWAL SEMINAR PROPOSAL') + '</h4>' +
           '<span class="badge badge-orange">Wajib NIDN</span></div>' +
           (sidang
@@ -1105,10 +1322,11 @@
             ? '<div data-jadwal-adm><div class="tiny muted mb1">Data tambahan dokumen sidang:</div>' +
               S.Form.render(defAdmSidang, { prefix: 'adm', tanpaKotak: true, dosen: (A.D.master.dosen || []) }) + '</div>'
             : '') +
-          (bisaJadwal ? '<button class="btn btn-dark btn-block" data-simpan-penguji>' + ik('calendar', 15) + 'Simpan Jadwal</button>' : '') +
           (r.status === 'MENUNGGU'
-            ? '<div class="tiny muted center mt1">Simpan Jadwal sekaligus <b>menyetujui</b> pendaftaran ' + (sidang ? 'sidang' : 'seminar proposal') +
+            ? '<div class="tiny muted center mb1">Simpan Jadwal sekaligus <b>menyetujui</b> pendaftaran ' + (sidang ? 'sidang' : 'seminar proposal') +
               ' — Lembar Penilaian Penguji dibuat otomatis (khusus admin) &amp; jadwal tampil di akun mahasiswa.</div>' : '') +
+          (bisaJadwal ? '<div class="aksi-lekat"><button class="btn ' + (r.status === 'MENUNGGU' ? 'btn-primary' : 'btn-dark') + ' btn-block" data-simpan-penguji>' + ik('calendar', 15) +
+            (r.status === 'MENUNGGU' ? 'Simpan Jadwal &amp; Verifikasi' : 'Simpan Jadwal') + '</button></div>' : '') +
           (pg.tanggalJadwal ? '<div class="notice ok mt2" style="font-size:12.5px">' + ik('checkCircle', 16) +
             '<span>Jadwal tersimpan &amp; tampil di akun mahasiswa: ' + F.hari(pg.tanggalJadwal) + ', ' + F.tgl(pg.tanggalJadwal) + ' pukul ' +
             F.esc(pg.jamJadwal + (pg.jamSelesai ? ' – ' + pg.jamSelesai : '')) + ' WIB.</span></div>' : '') +
@@ -1129,7 +1347,7 @@
           var ipkDibuat = (r.antrean || []).some(function (j) { return ['SKL', 'SK_KELULUSAN', 'LEMBAR_PENGESAHAN'].indexOf(j.kode) >= 0 && j.status !== 'GAGAL'; });
           if (dokSkl.length && pg.sklKirim) dokSkl[0].tampilMahasiswa = true;
           penguji +=
-            '<div style="border:1px solid var(--line);border-radius:12px;padding:14px;margin:14px 0;background:var(--surface-2)">' +
+            '<div class="dp-blok" style="border:1px solid var(--line);border-radius:12px;padding:14px;margin:14px 0;background:var(--surface-2)">' +
             '<div class="between mb2"><h4 style="font-size:13.5px">IPK &amp; Predikat Kelulusan</h4>' +
             (pg.ipk ? '<span class="badge badge-green">Tersimpan</span>' : '<span class="badge badge-gray">Belum diisi</span>') + '</div>' +
             '<div class="grid-2">' +
@@ -1169,7 +1387,7 @@
         var skDibuat = (r.antrean || []).some(function (j) { return (j.kode === 'SK_PEMBIMBING' || j.kode === 'F_KARTU_BIMBINGAN') && j.status !== 'GAGAL'; });
         var skBelum = dokSk.filter(function (x) { return x.tampilMahasiswa === false; });
         skBlok =
-          '<div style="border:1px solid var(--line);border-radius:12px;padding:14px;margin:14px 0;background:var(--surface-2)">' +
+          '<div class="dp-blok" style="border:1px solid var(--line);border-radius:12px;padding:14px;margin:14px 0;background:var(--surface-2)">' +
           '<div class="between mb2"><h4 style="font-size:13.5px">Verifikasi Revisi &amp; SK Pembimbing Skripsi</h4>' +
           (r.status === 'DISETUJUI'
             ? (skBelum.length || !dokSk.length ? '<span class="badge badge-amber">' + ik('send', 11) + ' Belum dikirim</span>' : '<span class="badge badge-green">' + ik('check', 11) + ' Terkirim</span>')
@@ -1185,9 +1403,9 @@
                 return '<option value="' + F.esc(x.id) + '">' + F.esc(x.nama + (x.nidn ? ' — NIDN: ' + x.nidn : '')) + '</option>';
               }).join('') + '</select>' +
               '<div class="hint">Dosen pembimbing otomatis menjadi Penguji 2 pada Sidang Skripsi.</div></div>' +
-              '<div class="row-wrap"><button class="btn btn-ghost" data-pv-sk>' + ik('eye', 15) + 'Pratinjau SK</button>' +
-              '<button class="btn btn-primary grow" data-terbit-sk>' + ik('award', 15) + 'Verifikasi Revisi &amp; Terbit SK</button></div>' +
-              '<div class="tiny muted center mt1">SK Pembimbing Skripsi &amp; Kartu Kontrol Bimbingan terbit otomatis, lalu tampil di akun mahasiswa setelah Anda menekan <b>Kirim ke Mahasiswa</b>.</div>'
+              '<div class="tiny muted center mb1">SK Pembimbing Skripsi &amp; Kartu Kontrol Bimbingan terbit otomatis, lalu tampil di akun mahasiswa setelah Anda menekan <b>Kirim ke Mahasiswa</b>.</div>' +
+              '<div class="row-wrap aksi-lekat"><button class="btn btn-ghost" data-pv-sk>' + ik('eye', 15) + 'Pratinjau SK</button>' +
+              '<button class="btn btn-primary grow" data-terbit-sk>' + ik('award', 15) + '<span>Verifikasi <span class="d-inline">Revisi </span>&amp; Terbit SK</span></button></div>'
             : (r.status === 'DISETUJUI'
               ? '<dl class="kv mb2"><dt>Nomor SK</dt><dd class="mono">' + F.esc(r.nomorSurat || '-') + '</dd>' +
                 '<dt>Dosen Pembimbing</dt><dd>' + F.esc(d.pembimbing || '-') + '</dd></dl>' +
@@ -1206,7 +1424,7 @@
       // Kolom yang harus dilengkapi admin sebelum dokumen otomatis diterbitkan.
       var defAdmin = A.fieldAdmin(r.jenis, true);
       var blokAdmin = (r.status === 'MENUNGGU' && defAdmin.length)
-        ? '<div style="border:1px solid var(--line);border-radius:12px;padding:14px;margin:14px 0;background:var(--surface-2)">' +
+        ? '<div class="dp-blok" style="border:1px solid var(--line);border-radius:12px;padding:14px;margin:14px 0;background:var(--surface-2)">' +
         '<div class="between mb2"><h4 style="font-size:13.5px">Data yang Dilengkapi BAAK</h4>' +
         '<span class="badge badge-blue">' + defAdmin.length + ' kolom</span></div>' +
         '<div class="tiny muted mb2">Kolom ini berasal dari placeholder bertanda “Input Admin” pada template dokumen.</div>' +
@@ -1263,12 +1481,12 @@
             ? '<div class="field mt1"><label>Dokumen yang dipratinjau</label><select class="select" data-pv-kode>' +
               daftarOtomatis.map(function (x) { return '<option value="' + F.esc(x.kode) + '">' + F.esc(x.nama) + '</option>'; }).join('') + '</select></div>'
             : '') +
-          '<div class="row-wrap mt1">' +
+          '<div class="tiny muted center mt1">Pratinjau tidak memakai nomor. Nomor surat dikunci saat "Setujui" ditekan; PDF dibuat di latar belakang.</div>' +
+          '<div class="row-wrap mt1 aksi-lekat">' +
           (daftarOtomatis.length ? '<button class="btn btn-ghost" data-pratinjau>' + ik('eye', 16) + 'Pratinjau</button>' : '') +
           '<button class="btn btn-primary grow" data-setuju>' + ik('checkCircle', 16) + 'Setujui &amp; Terbitkan Dokumen</button>' +
           '<button class="btn btn-danger" data-tolak>' + ik('xCircle', 16) + 'Tolak</button>' +
-          '</div>' +
-          '<div class="tiny muted center mt1">Pratinjau tidak memakai nomor. Nomor surat dikunci saat "Setujui" ditekan; PDF dibuat di latar belakang.</div>';
+          '</div>';
       } else {
         keputusan =
           '<div class="notice ' + (r.status === 'DISETUJUI' ? 'ok' : 'danger') + ' mt2">' +
@@ -1360,6 +1578,19 @@
           A.kirimDok(r, kodes, ev.currentTarget);
         };
       });
+
+      // v3.4: Revisi Sidang → buka pendaftaran sidang mahasiswa untuk input IPK
+      var bKeSidang = root.querySelector('[data-ke-sidang]');
+      if (bKeSidang) bKeSidang.onclick = function () {
+        A.pilih.SIDANG = bKeSidang.getAttribute('data-ke-sidang');
+        A.filterQ = A.filterQ || {}; A.filterQ.SIDANG = 'Semua';
+        A.kotor.q_SIDANG = true;
+        A.pergi('q_SIDANG');
+        setTimeout(function () {
+          var ip = document.querySelector('#admview-q_SIDANG [data-detail] [data-ipk]');
+          if (ip) { A.gulirKe(ip); try { ip.focus({ preventScroll: true }); } catch (e) { } }
+        }, 150);
+      };
 
       var bUlang = root.querySelector('[data-ulangi-dok]');
       if (bUlang) bUlang.onclick = function (ev) {
@@ -1900,10 +2131,14 @@
 
         '<div class="card"><div class="card-head"><div><h3>Rekap Dosen Pembimbing Magang</h3>' +
         '<div class="sub">Jumlah mahasiswa = pengaju + anggota kelompok yang dibimbing</div></div>' +
-        '<button class="btn btn-ghost btn-sm" id="dm-cetak">' + ik('printer', 14) + 'Cetak</button></div>' +
+        '<div class="row-wrap"><button class="btn btn-ghost btn-sm" id="dm-cetak" title="Cetak rincian: dosen, mahasiswa & tempat magang">' + ik('printer', 14) + 'Cetak</button>' +
+        '<button class="btn btn-ghost btn-sm" id="dm-excel">' + ik('download', 14) + 'Excel</button></div></div>' +
         '<div class="table-wrap"><table class="tbl"><thead><tr><th>No</th><th>Nama Dosen</th><th>Jumlah Kelompok</th><th>Jumlah Mahasiswa</th>' +
         '<th>Surat Tugas</th><th style="text-align:right">Aksi</th></tr></thead><tbody id="dm-rekap"></tbody></table></div>' +
-        '<div class="card-body tiny muted">' + ik('lock', 12) + ' Surat Tugas Dosen Pembimbing hanya untuk BAAK/dosen — tidak dikirim ke akun mahasiswa.</div></div>';
+        '<div class="card-body tiny muted">' + ik('lock', 12) + ' Surat Tugas Dosen Pembimbing hanya untuk BAAK/dosen — tidak dikirim ke akun mahasiswa.' +
+        '<div class="mt1">' + ik('info', 12) + ' <b>Lampiran surat tugas</b>: buat <b>satu baris</b> tabel di template berisi ' +
+        '<span class="mono">{{mhs_no}} {{mhs_nama}} {{mhs_nim}} {{mhs_prodi}} {{mhs_kelas}} {{mhs_instansi}}</span> — baris digandakan otomatis untuk ' +
+        '<b>seluruh</b> mahasiswa bimbingan dosen tersebut (penanda <span class="mono">{{anggota_…}}</span> juga berisi seluruh mahasiswa).</div></div></div>';
 
       function terfilter() {
         return rows.filter(function (r) {
@@ -2042,11 +2277,19 @@
           isi: 'Penetapan dosen yang final dipakai untuk Surat Tugas Dosen Pembimbing dan tampil di Konfirmasi Magang.'
         }).then(function (ya) { if (ya) simpan('FINAL', btn); });
       };
+      // v3.4 (Revisi 6): cetak RINCI — nama dosen, nama mahasiswa, NIM, prodi, kelas & tempat magang (bukan hanya jumlah).
       el.querySelector('#dm-cetak').onclick = function (ev) {
-        var list = A._dmRekap || [];
-        if (!list.length) return UI.toast('Belum ada data rekap.', 'warn');
-        A.cetakPdf(ev.currentTarget, 'Rekap Dosen Pembimbing Magang', ['No', 'Nama Dosen', 'Jumlah Kelompok', 'Jumlah Mahasiswa'],
-          list.map(function (x, i) { return [i + 1, x.nama, x.kelompok, x.mhs]; }));
+        var rk = A.rekapDosenMagangRinci(rows);
+        if (!rk.jumlahMhs) return UI.toast('Belum ada data rekap.', 'warn');
+        A.cetakPdf(ev.currentTarget, 'Rekap Dosen Pembimbing Magang', rk.kolom, rk.baris, { sub: rk.sub, lanskap: true });
+      };
+      el.querySelector('#dm-excel').onclick = function () {
+        var rk = A.rekapDosenMagangRinci(rows);
+        if (!rk.jumlahMhs) return UI.toast('Belum ada data rekap.', 'warn');
+        S.Xlsx.unduh('Rekap-Dosen-Pembimbing-Magang-' + new Date().toISOString().substring(0, 10), [{
+          nama: 'Rekap Dosen Magang', judul: 'Rekap Dosen Pembimbing Magang', sub: rk.sub, kolom: rk.kolomXls, baris: rk.barisXls
+        }]);
+        UI.toast('Berkas Excel diunduh.', 'ok');
       };
 
       // ---- Progres magang (kartu) + Excel ----
@@ -2107,6 +2350,42 @@
       }
     },
 
+    /**
+     * v3.4: rekap rinci per dosen pembimbing magang (dipakai Cetak & Excel).
+     * Setiap mahasiswa (ketua + anggota kelompok) satu baris; nama dosen ditulis di baris pertama kelompoknya.
+     */
+    rekapDosenMagangRinci: function (rows) {
+      var per = {}, urut = [];
+      (rows || []).forEach(function (r) {
+        if (!r.dosenId) return;
+        if (!per[r.dosenId]) { per[r.dosenId] = { nama: r.dosenNama || '-', nidn: r.dosenNidn || '', kelompok: 0, mhs: [] }; urut.push(r.dosenId); }
+        var x = per[r.dosenId];
+        x.kelompok++;
+        x.mhs.push({ nama: r.nama, nim: r.nim, prodi: r.prodi, kelas: r.kelas, instansi: r.instansi });
+        (r.anggota || []).forEach(function (a) { x.mhs.push({ nama: a.nama, nim: a.nim, prodi: a.prodi, kelas: a.kelas, instansi: r.instansi }); });
+      });
+      var list = urut.map(function (k) { return per[k]; }).sort(function (a, b) { return String(a.nama).localeCompare(String(b.nama)); });
+      var kelas = function (k) { return A.labelKelas(k) || k || '-'; };
+      var baris = [], barisXls = [], total = 0;
+      list.forEach(function (x, i) {
+        x.mhs.forEach(function (m, j) {
+          total++;
+          baris.push([j === 0 ? i + 1 : '',
+            j === 0 ? x.nama + (x.nidn ? '\nNIDN ' + x.nidn : '') + '\n(' + x.mhs.length + ' mahasiswa • ' + x.kelompok + ' kelompok)' : '',
+            j + 1, m.nama || '-', String(m.nim || '-'), m.prodi || '-', kelas(m.kelas), m.instansi || '-']);
+          barisXls.push([total, x.nama, String(x.nidn || '-'), j + 1, m.nama || '-', String(m.nim || '-'), m.prodi || '-', kelas(m.kelas), m.instansi || '-']);
+        });
+      });
+      return {
+        kolom: ['No', 'Dosen Pembimbing', 'No. Mhs', 'Nama Mahasiswa', 'NIM', 'Program Studi', 'Program Kelas', 'Tempat Magang'],
+        baris: baris,
+        kolomXls: ['NO', 'NAMA DOSEN', 'NIDN', 'NO. MHS', 'NAMA MAHASISWA', 'NIM', 'PROGRAM STUDI', 'PROGRAM KELAS', 'TEMPAT MAGANG'],
+        barisXls: barisXls,
+        jumlahMhs: total,
+        sub: list.length + ' dosen pembimbing • ' + total + ' mahasiswa • dicetak ' + F.tgl(new Date())
+      };
+    },
+
     /** Cetak tabel apa pun ke PDF (server, base64 — tanpa berkas Drive). */
     cetakPdf: function (btn, judul, kolom, baris, opsi) {
       opsi = opsi || {};
@@ -2144,15 +2423,27 @@
       var beban = Object.keys(per).map(function (k) { return per[k]; }).sort(function (a, b) { return b.total - a.total || a.nama.localeCompare(b.nama); });
 
       // Kotak 2 — mahasiswa pendaftar sidang + IPK & predikat
-      var peserta = [], sudah = {};
+      // v3.4 (Revisi 6): + judul skripsi final, hari sidang, nomor SKK & SKL.
+      // Backend v3.4 mengirim judulFinal/nomorSkk/nomorSkl; backend lama → diambil dari data pengajuan yang termuat.
+      var peserta = [], sudah = {}, rowById = {};
+      (A.D.antrean || []).concat(A.D.riwayat || []).forEach(function (r) { rowById[r.id] = r; });
+      var nomorDok = function (row, kode) {
+        var x = ((row && row.dokumen) || []).filter(function (dk) { return dk.kode === kode; })[0];
+        return x ? (x.nomor || '') : '';
+      };
       pgAll.filter(function (p) { return p.jenis === 'SIDANG'; }).forEach(function (p) {
         sudah[p.idPengajuan] = true;
-        peserta.push({ nama: p.nama, nim: p.nim, prodi: p.prodiNama, tanggal: p.tanggalJadwal, p1: p.penguji1, p2: p.penguji2, p3: p.penguji3, ipk: p.ipk, predikat: p.predikat });
+        var row = rowById[p.idPengajuan], dd = (row && row.data) || {};
+        var stP = p.statusPengajuan || (row && row.status) || '';
+        if (stP === 'DIBATALKAN' || stP === 'DITOLAK') return;   // pendaftaran batal/ditolak tidak dihitung
+        peserta.push({ nama: p.nama, nim: p.nim, prodi: p.prodiNama, tanggal: p.tanggalJadwal, p1: p.penguji1, p2: p.penguji2, p3: p.penguji3, ipk: p.ipk, predikat: p.predikat,
+          judul: p.judulFinal || dd.judulFinal || dd.judul || '', skk: p.nomorSkk || nomorDok(row, 'SK_KELULUSAN'), skl: p.nomorSkl || nomorDok(row, 'SKL') });
       });
       (A.D.antrean || []).concat(A.D.riwayat || []).forEach(function (r) {
-        if (r.jenis !== 'SIDANG' || sudah[r.id] || r.status === 'DITOLAK') return;
+        if (r.jenis !== 'SIDANG' || sudah[r.id] || r.status === 'DITOLAK' || r.status === 'DIBATALKAN') return;
         sudah[r.id] = true;
-        peserta.push({ nama: r.nama, nim: r.nim, prodi: r.prodiNama || r.prodi, tanggal: '', p1: '', p2: '', p3: '', ipk: '', predikat: '' });
+        peserta.push({ nama: r.nama, nim: r.nim, prodi: r.prodiNama || r.prodi, tanggal: '', p1: '', p2: '', p3: '', ipk: '', predikat: '',
+          judul: (r.data || {}).judulFinal || (r.data || {}).judul || '', skk: '', skl: '' });
       });
       peserta.sort(function (a, b) { return String(a.tanggal || '9').localeCompare(String(b.tanggal || '9')) || a.nama.localeCompare(b.nama); });
 
@@ -2188,24 +2479,30 @@
         '<div class="sub">' + peserta.length + ' mahasiswa mendaftar sidang • IPK &amp; predikat dari menu Sidang Skripsi</div></div>' +
         '<div class="row-wrap"><button class="btn btn-ghost btn-sm" id="dp2-pdf">' + ik('printer', 14) + 'PDF</button>' +
         '<button class="btn btn-ghost btn-sm" id="dp2-xls">' + ik('download', 14) + 'Excel</button></div></div>' +
-        '<div class="table-wrap"><table class="tbl"><thead><tr><th>No</th><th>Nama</th><th>NIM</th><th>Program Studi</th><th>Tanggal Sidang</th>' +
-        '<th>Penguji 1</th><th>Penguji 2</th><th>Penguji 3</th><th>IPK</th><th>Predikat</th></tr></thead><tbody>' +
+        '<div class="table-wrap"><table class="tbl"><thead><tr><th>No</th><th>Nama</th><th>NIM</th><th>Program Studi</th><th>Judul Skripsi Final</th>' +
+        '<th>Hari Sidang</th><th>Tanggal Sidang</th>' +
+        '<th>Penguji 1</th><th>Penguji 2</th><th>Penguji 3</th><th>IPK</th><th>Predikat</th><th>No. SKK</th><th>No. SKL</th></tr></thead><tbody>' +
         (peserta.length ? peserta.map(function (x, i) {
           return '<tr><td>' + (i + 1) + '</td><td class="bold">' + F.esc(x.nama) + '</td><td class="mono">' + F.esc(x.nim) + '</td><td>' + F.esc(x.prodi) + '</td>' +
+            '<td style="min-width:220px;max-width:340px;white-space:normal">' + F.esc(x.judul || '-') + '</td>' +
+            '<td class="nowrap">' + (x.tanggal ? F.esc(F.hari(x.tanggal)) : '<span class="muted">-</span>') + '</td>' +
             '<td class="nowrap">' + (x.tanggal ? F.tgl(x.tanggal, true) : '<span class="muted">Belum dijadwalkan</span>') + '</td>' +
             '<td>' + F.esc(namaPolos(x.p1) || '-') + '</td><td>' + F.esc(namaPolos(x.p2) || '-') + '</td><td>' + F.esc(namaPolos(x.p3) || '-') + '</td>' +
-            '<td class="mono">' + F.esc(x.ipk || '-') + '</td><td>' + F.esc(x.predikat || '-') + '</td></tr>';
-        }).join('') : '<tr><td colspan="10" class="center muted small" style="padding:18px">Belum ada pendaftar sidang skripsi.</td></tr>') +
+            '<td class="mono">' + F.esc(x.ipk || '-') + '</td><td>' + F.esc(x.predikat || '-') + '</td>' +
+            '<td class="mono tiny nowrap">' + F.esc(x.skk || '-') + '</td><td class="mono tiny nowrap">' + F.esc(x.skl || '-') + '</td></tr>';
+        }).join('') : '<tr><td colspan="14" class="center muted small" style="padding:18px">Belum ada pendaftar sidang skripsi.</td></tr>') +
         '</tbody></table></div></div>';
 
       var judulJenis = jenis === 'SEMUA' ? 'Seminar Proposal & Sidang Skripsi' : (jenis === 'SIDANG' ? 'Sidang Skripsi' : 'Seminar Proposal');
       var sub = 'Tahun Akademik ' + (ta.label || '');
       var k1 = ['No', 'Nama Dosen', 'Penguji 1', 'Penguji 2', 'Penguji 3', 'Jumlah Peran'];
       var b1 = beban.map(function (x, i) { return [i + 1, x.nama, x.p1, x.p2, x.p3, x.total]; });
-      var k2 = ['No', 'Nama', 'NIM', 'Program Studi', 'Tanggal Sidang', 'Penguji 1', 'Penguji 2', 'Penguji 3', 'IPK', 'Predikat'];
+      var k2 = ['No', 'Nama', 'NIM', 'Program Studi', 'Judul Skripsi Final', 'Hari Sidang', 'Tanggal Sidang', 'Penguji 1', 'Penguji 2', 'Penguji 3',
+        'IPK', 'Predikat', 'No. SKK', 'No. SKL'];
       var b2 = peserta.map(function (x, i) {
-        return [i + 1, x.nama, String(x.nim), x.prodi, x.tanggal ? F.tgl(x.tanggal) : '-', namaPolos(x.p1) || '-', namaPolos(x.p2) || '-', namaPolos(x.p3) || '-',
-          x.ipk ? parseFloat(x.ipk) : '-', x.predikat || '-'];
+        return [i + 1, x.nama, String(x.nim), x.prodi, x.judul || '-', x.tanggal ? F.hari(x.tanggal) : '-', x.tanggal ? F.tgl(x.tanggal) : '-',
+          namaPolos(x.p1) || '-', namaPolos(x.p2) || '-', namaPolos(x.p3) || '-',
+          x.ipk ? parseFloat(x.ipk) : '-', x.predikat || '-', x.skk || '-', x.skl || '-'];
       });
       var tgl = new Date().toISOString().substring(0, 10);
 
