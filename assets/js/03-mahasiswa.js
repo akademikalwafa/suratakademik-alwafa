@@ -312,6 +312,16 @@
           F.tgl(d.konfigurasi.batasMagang) + '. Lengkapi data PJ Magang sebelum akses ditutup.</span></div>';
       }
 
+      // v3.5: mahasiswa lulus — hanya Skripsi & Administrasi Kelulusan
+      if (d.statusLulus && d.statusLulus.berlaku) {
+        var namaBuka = (d.statusLulus.menuTerbuka || []).map(function (k) {
+          var m = MENU.filter(function (x) { return x.k === k; })[0];
+          return m ? '<b>' + F.esc(m.kn || m.n) + '</b>' : '';
+        }).filter(Boolean);
+        html += '<div class="notice ok mb2">' + ik('award', 17) + '<span><b>Selamat, Anda telah dinyatakan lulus.</b> ' +
+          'SKL sudah diterbitkan' + (namaBuka.length ? ' — layanan yang masih dapat diakses: ' + namaBuka.join(', ') : '') + '.</span></div>';
+      }
+
       // Status pengajuan terakhir (v3.4: jenis dokumen • langkah • tombol dalam satu kotak)
       if (terakhir) {
         var langkah = M.langkahStatus(terakhir);
@@ -402,6 +412,9 @@
           } else if (bd === 'Ditutup') {
             pill = '<span class="p4 abu">Ditutup</span>';
             kaki = '<span class="k4">Periode Ditutup ' + ik('calendar', 12) + '</span>';
+          } else if (bd === 'Lulus') {   // v3.5: mahasiswa lulus
+            pill = '<span class="p4 abu">' + ik('award', 11) + ' Lulus</span>';
+            kaki = '<span class="k4">Tidak tersedia ' + ik('lock', 12) + '</span>';
           } else if (bd === 'Selesai') {
             pill = '<span class="p4 hijau">Selesai</span>';
             kaki = '<span class="k4">Sudah Selesai ' + ik('check', 12) + '</span>';
@@ -476,6 +489,14 @@
     },
 
     /** Kotak unggah berkas (dipakai banyak formulir). */
+    /** v3.5 (Revisi 7): pilihan Jenis Penelitian (Kualitatif / Kuantitatif). */
+    pilihJenisPenelitian: function (id) {
+      return '<div class="field"><label for="' + id + '">Jenis Penelitian <span class="req">*</span></label>' +
+        '<select class="select" id="' + id + '"><option value="">— Pilih jenis penelitian —</option>' +
+        '<option value="Kualitatif">Kualitatif</option><option value="Kuantitatif">Kuantitatif</option></select>' +
+        '<div class="hint">Menentukan lembar penilaian yang dipakai dosen penguji.</div></div>';
+    },
+
     kotakUnggah: function (id, judul, ket, wajib) {
       return '<div class="field"><label>' + judul + (wajib ? ' <span class="req">*</span>' : ' <span class="muted">(opsional)</span>') + '</label>' +
         '<div class="upload" id="' + id + '"><input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp">' +
@@ -910,7 +931,7 @@
         '<textarea class="textarea" id="sa-ket" maxlength="400" placeholder="Tuliskan keterangan bila instansi meminta format nomor induk orang tua atau format khusus lainnya…"></textarea></div>' +
 
         M.judulBagian(3, 'Berkas Pendukung') +
-        M.kotakUnggah('sa-khs', 'Kartu Hasil Studi (KHS) Terakhir', 'Unggah KHS semester terakhir', true) +
+        M.kotakUnggah('sa-khs', 'Kartu Rencana Studi (KRS)', 'Unggah KRS semester berjalan', true) +
 
         M.blokDinamis('SURAT_AKTIF', SUDAH) +
 
@@ -943,7 +964,7 @@
           !nilai('#sa-tgl') ? 'Tanggal lahir' : '',
           !nilai('#sa-instansi') ? 'Instansi tujuan' : '',
           nilai('#sa-keperluan').length < 3 ? 'Keperluan surat' : '',
-          M.kurangUnggah(khs, 'KHS')
+          M.kurangUnggah(khs, 'KRS')
         ].concat(M.kurangDinamis(el, 'SURAT_AKTIF', SUDAH));
       });
 
@@ -967,8 +988,8 @@
         if (!data.tanggalLahir) return UI.toast('Tanggal lahir wajib diisi.', 'error');
         if (!data.instansi) return UI.toast('Instansi tujuan wajib diisi.', 'error');
         if (data.keperluan.length < 3) return UI.toast('Keperluan surat wajib diisi.', 'error');
-        if (khs.sedang) return UI.toast('Tunggu proses unggah KHS selesai.', 'warn');
-        if (!khs.fileId) return UI.toast('Unggah Kartu Hasil Studi (KHS) terlebih dahulu.', 'error');
+        if (khs.sedang) return UI.toast('Tunggu proses unggah KRS selesai.', 'warn');
+        if (!khs.fileId) return UI.toast('Unggah Kartu Rencana Studi (KRS) terlebih dahulu.', 'error');
         M.ajukan('SURAT_AKTIF', data, ev.currentTarget);
       };
     },
@@ -1312,6 +1333,7 @@
           '<div class="sub">Diajukan ' + F.tgl(daftar.tanggalAjukan) + '</div></div>' + F.statusBadge(daftar.status) + '</div>' +
           '<div class="card-body">' +
           '<dl class="kv"><dt>Judul Proposal</dt><dd>' + F.esc(daftar.data.judul || '-') + '</dd>' +
+          (daftar.data.jenisPenelitian ? '<dt>Jenis Penelitian</dt><dd>' + F.esc(daftar.data.jenisPenelitian) + '</dd>' : '') +
           '<dt>No. WhatsApp</dt><dd class="mono">' + F.esc(daftar.data.noWa || '-') + '</dd>' +
           (daftar.nomorSurat ? '<dt>Nomor Dokumen</dt><dd class="mono">' + F.esc(daftar.nomorSurat) + '</dd>' : '') +
           '</dl>' +
@@ -1336,9 +1358,11 @@
           M.kartuPemohon('Pendaftar') +
           '<div class="field"><label for="sp-judul">Judul Proposal Skripsi <span class="req">*</span></label>' +
           '<textarea class="textarea" id="sp-judul" maxlength="300" placeholder="Tuliskan judul proposal sesuai arahan calon dosen pembimbing"></textarea></div>' +
+          M.pilihJenisPenelitian('sp-jenis') +
           '<div class="field"><label for="sp-wa">No. WhatsApp Aktif <span class="req">*</span></label>' +
           '<input class="input mono" id="sp-wa" inputmode="numeric" maxlength="15" placeholder="08xxxxxxxxxx" value="' + F.esc(d.profil.noWa || '') + '"></div>' +
-          M.blokDinamis('SEMPRO', ['judul', 'no_wa']) +
+          M.kotakUnggah('sp-transkrip', 'Transkrip Nilai Sementara (Semester 1–6)', 'Unggah transkrip sementara semester 1–6', true) +
+          M.blokDinamis('SEMPRO', ['judul', 'no_wa', 'jenis_penelitian']) +
           '<button class="btn btn-primary btn-block btn-lg mt2" id="sp-kirim">' + ik('send', 16) + 'Daftar Seminar Proposal</button>' +
           '</div></div>';
       }
@@ -1367,7 +1391,7 @@
           '<div class="sub">Pengesahan hasil perbaikan dari dewan penguji</div></div>' +
           '<span class="badge badge-green">Lulus Sempro</span></div><div class="card-body">' +
           '<div class="field"><label for="rs-judul">Judul Proposal Final (Pasca-Revisi) <span class="req">*</span></label>' +
-          '<textarea class="textarea" id="rs-judul" maxlength="300">' + F.esc(daftar.data.judul || '') + '</textarea>' +
+          '<textarea class="textarea" id="rs-judul" maxlength="300" placeholder="Ketik judul proposal final hasil revisi"></textarea>' +
           '<div class="hint">Pastikan judul sudah disetujui dosen penguji — judul ini yang tercetak pada SK Pembimbing.</div></div>' +
           '<div class="field"><label for="rs-penguji">Dosen Penguji Sempro (khusus NIDN) <span class="req">*</span></label>' +
           '<select class="select" id="rs-penguji"><option value="">— Pilih dosen penguji —</option>' +
@@ -1376,10 +1400,10 @@
             return '<option value="' + F.esc(x.id) + '"' + pilih + '>' + F.esc(x.nama) + (x.nidn ? ' (NIDN: ' + F.esc(x.nidn) + ')' : '') + '</option>';
           }).join('') +
           '</select><div class="hint">Hanya dosen berstatus NIDN aktif sesuai ketentuan PRD 5.B.</div></div>' +
-          '<div class="field"><label>Lembar Pengesahan Revisi (PDF) <span class="muted">(opsional)</span></label>' +
+          '<div class="field"><label>Upload Lembar Pernyataan Revisi Seminar Proposal <span class="muted">(opsional)</span></label>' +
           '<div class="upload" id="rs-upload"><input type="file" accept=".pdf,.jpg,.jpeg,.png">' +
           '<div data-info><div style="color:var(--orange-600);line-height:0;margin-bottom:6px">' + ik('upload', 24) + '</div>' +
-          '<div class="upload-name">Unggah Lembar Pengesahan</div>' +
+          '<div class="upload-name">Upload Lembar Pernyataan Revisi Seminar Proposal</div>' +
           '<div class="tiny muted">PDF atau gambar hasil pindai, maksimal ' + S.CFG.MAKS_UNGGAH_MB + ' MB</div></div></div></div>' +
           '<button class="btn btn-primary btn-block btn-lg mt2" id="rs-kirim">' + ik('send', 16) + 'Kirim Pernyataan Revisi</button>' +
           '</div></div>';
@@ -1430,21 +1454,29 @@
 
       var btnDaftar = el.querySelector('#sp-kirim');
       if (btnDaftar) {
+        var ungTrS = S.pasangUnggah(el.querySelector('#sp-transkrip'), { kategori: 'sempro' });   // v3.5
         M.kunciKirim(el, btnDaftar, function () {
           return [el.querySelector('#sp-judul').value.trim().length < 10 ? 'Judul proposal (min. 10 karakter)' : '',
-            el.querySelector('#sp-wa').value.replace(/\D/g, '').length < 9 ? 'No. WhatsApp' : '']
-            .concat(M.kurangDinamis(el, 'SEMPRO', ['judul', 'no_wa']));
+            !el.querySelector('#sp-jenis').value ? 'Jenis penelitian' : '',
+            el.querySelector('#sp-wa').value.replace(/\D/g, '').length < 9 ? 'No. WhatsApp' : '',
+            M.kurangUnggah(ungTrS, 'Transkrip sementara')]
+            .concat(M.kurangDinamis(el, 'SEMPRO', ['judul', 'no_wa', 'jenis_penelitian']));
         });
         btnDaftar.onclick = function (ev) {
-          var dynS = M.ambilDinamis(el, 'SEMPRO', ['judul', 'no_wa']);
+          var dynS = M.ambilDinamis(el, 'SEMPRO', ['judul', 'no_wa', 'jenis_penelitian']);
           if (dynS.error) return UI.toast(dynS.error, 'error');
           var data = {
             judul: el.querySelector('#sp-judul').value.trim(),
+            jenisPenelitian: el.querySelector('#sp-jenis').value,
             noWa: el.querySelector('#sp-wa').value.trim(),
+            transkripFileId: ungTrS.fileId, transkripUrl: ungTrS.url,
             _dinamis: dynS.nilai
           };
           if (data.judul.length < 10) return UI.toast('Judul proposal minimal 10 karakter.', 'error');
+          if (!data.jenisPenelitian) return UI.toast('Pilih jenis penelitian (Kualitatif / Kuantitatif).', 'error');
           if (!data.noWa) return UI.toast('Nomor WhatsApp aktif wajib diisi.', 'error');
+          if (ungTrS.sedang) return UI.toast('Tunggu proses unggah transkrip selesai.', 'warn');
+          if (!ungTrS.fileId) return UI.toast('Unggah Transkrip Nilai Sementara (semester 1–6) terlebih dahulu.', 'error');
           M.ajukan('SEMPRO', data, ev.currentTarget);
         };
       }
@@ -1455,7 +1487,7 @@
         M.kunciKirim(el, btnRevisi, function () {
           return [el.querySelector('#rs-judul').value.trim().length < 10 ? 'Judul final (min. 10 karakter)' : '',
             !el.querySelector('#rs-penguji').value ? 'Dosen penguji sempro' : '',
-            ung.sedang ? 'Lembar pengesahan (sedang diunggah)' : ''];
+            ung.sedang ? 'Lembar pernyataan revisi (sedang diunggah)' : ''];
         });
         btnRevisi.onclick = function (ev) {
           var data = {
@@ -1544,6 +1576,7 @@
           '<div class="sub">Diajukan ' + F.tgl(daftar.tanggalAjukan) + '</div></div>' + F.statusBadge(daftar.status) + '</div>' +
           '<div class="card-body"><dl class="kv">' +
           '<dt>Judul Skripsi</dt><dd>' + F.esc(daftar.data.judul || '-') + '</dd>' +
+          (daftar.data.jenisPenelitian ? '<dt>Jenis Penelitian</dt><dd>' + F.esc(daftar.data.jenisPenelitian) + '</dd>' : '') +
           '<dt>Tempat, Tgl. Lahir</dt><dd>' + F.esc(daftar.data.tempatLahir || '-') + ', ' + F.tgl(daftar.data.tanggalLahir) + '</dd>' +
           '<dt>No. WhatsApp</dt><dd class="mono">' + F.esc(daftar.data.noWa || '-') + '</dd>' +
           (jadwal && jadwal.penguji1 ? '<dt>Penguji 1</dt><dd>' + F.esc(jadwal.penguji1) + '</dd>' +
@@ -1565,6 +1598,7 @@
           M.kartuPemohon('Pendaftar') +
           '<div class="field"><label for="sd-judul">Judul Skripsi <span class="req">*</span></label>' +
           '<textarea class="textarea" id="sd-judul" maxlength="300" placeholder="Judul skripsi sesuai naskah yang disetujui pembimbing"></textarea></div>' +
+          M.pilihJenisPenelitian('sd-jenis') +
           '<div class="grid-2">' +
           '<div class="field"><label for="sd-tl">Tempat Lahir <span class="req">*</span></label>' +
           '<input class="input" id="sd-tl" maxlength="60" placeholder="Contoh: Bogor"></div>' +
@@ -1577,7 +1611,8 @@
           '<input class="input mono" id="sd-ipk" maxlength="5" placeholder="Contoh: 3.82"></div></div>' +
           '<div class="notice mt1 mb2">' + ik('info', 17) +
           '<span>Data tempat &amp; tanggal lahir dipakai untuk penerbitan Surat Keterangan Lulus (SKL) — isi sesuai akta/KTP.</span></div>' +
-          M.blokDinamis('SIDANG', ['judul', 'no_wa', 'tempat_lahir', 'tanggal_lahir', 'ipk']) +
+          M.kotakUnggah('sd-transkrip', 'Transkrip Nilai Sementara (Semester 1–7)', 'Unggah transkrip sementara semester 1–7', true) +
+          M.blokDinamis('SIDANG', ['judul', 'no_wa', 'tempat_lahir', 'tanggal_lahir', 'ipk', 'jenis_penelitian']) +
           '<button class="btn btn-primary btn-block btn-lg" id="sd-kirim">' + ik('send', 16) + 'Daftar Sidang Skripsi</button>' +
           '</div></div>';
       }
@@ -1610,7 +1645,7 @@
           '<div class="sub">Finalisasi naskah pasca-sidang — lengkapi seluruh isian &amp; berkas</div></div></div><div class="card-body">' +
           M.judulBagian(1, 'Data Skripsi Final') +
           '<div class="field"><label for="rk-judul">Judul Skripsi Final <span class="req">*</span></label>' +
-          '<textarea class="textarea" id="rk-judul" maxlength="300">' + F.esc(daftar.data.judul || '') + '</textarea></div>' +
+          '<textarea class="textarea" id="rk-judul" maxlength="300" placeholder="Ketik judul skripsi final sesuai naskah yang disahkan"></textarea></div>' +
           '<div class="field"><label for="rk-acc">Tanggal ACC Pengesahan Skripsi <span class="req">*</span></label>' +
           '<input class="input" id="rk-acc" type="date"></div>' +
           M.judulBagian(2, 'Dewan Penguji Sidang Skripsi') +
@@ -1664,16 +1699,24 @@
 
       var bd = el.querySelector('#sd-kirim');
       if (bd) {
+        var ungTrD = S.pasangUnggah(el.querySelector('#sd-transkrip'), { kategori: 'sidang' });   // v3.5
         M.kunciKirim(el, bd, function () {
           var v = function (id) { return el.querySelector(id).value.trim(); };
-          return [v('#sd-judul').length < 10 ? 'Judul skripsi (min. 10 karakter)' : '', !v('#sd-tl') ? 'Tempat lahir' : '',
-            !v('#sd-tgl') ? 'Tanggal lahir' : '', v('#sd-wa').replace(/\D/g, '').length < 9 ? 'No. WhatsApp' : '']
-            .concat(M.kurangDinamis(el, 'SIDANG', ['judul', 'no_wa', 'tempat_lahir', 'tanggal_lahir', 'ipk']));
+          return [v('#sd-judul').length < 10 ? 'Judul skripsi (min. 10 karakter)' : '', !v('#sd-jenis') ? 'Jenis penelitian' : '',
+            !v('#sd-tl') ? 'Tempat lahir' : '',
+            !v('#sd-tgl') ? 'Tanggal lahir' : '', v('#sd-wa').replace(/\D/g, '').length < 9 ? 'No. WhatsApp' : '',
+            M.kurangUnggah(ungTrD, 'Transkrip sementara')]
+            .concat(M.kurangDinamis(el, 'SIDANG', ['judul', 'no_wa', 'tempat_lahir', 'tanggal_lahir', 'ipk', 'jenis_penelitian']));
         });
         bd.onclick = function (ev) {
-          var dynD = M.ambilDinamis(el, 'SIDANG', ['judul', 'no_wa', 'tempat_lahir', 'tanggal_lahir', 'ipk']);
+          var dynD = M.ambilDinamis(el, 'SIDANG', ['judul', 'no_wa', 'tempat_lahir', 'tanggal_lahir', 'ipk', 'jenis_penelitian']);
           if (dynD.error) return UI.toast(dynD.error, 'error');
+          if (ungTrD.sedang) return UI.toast('Tunggu proses unggah transkrip selesai.', 'warn');
+          if (!ungTrD.fileId) return UI.toast('Unggah Transkrip Nilai Sementara (semester 1–7) terlebih dahulu.', 'error');
+          if (!el.querySelector('#sd-jenis').value) return UI.toast('Pilih jenis penelitian (Kualitatif / Kuantitatif).', 'error');
           var data = {
+            jenisPenelitian: el.querySelector('#sd-jenis').value,
+            transkripFileId: ungTrD.fileId, transkripUrl: ungTrD.url,
             judul: el.querySelector('#sd-judul').value.trim(),
             tempatLahir: el.querySelector('#sd-tl').value.trim(),
             tanggalLahir: el.querySelector('#sd-tgl').value,
@@ -1777,7 +1820,7 @@
           '<div class="tiny muted">Bukti penyerahan naskah hardcover &amp; surat bebas pinjaman perpustakaan</div></div>' +
           badgeKirim(t1) + '</div>' +
           '<div class="tahap-b">' +
-          '<dl class="kv mb2"><dt>Judul Naskah</dt><dd>' + F.esc(k.judulFinal || '-') + '</dd></dl>' +
+          '<dl class="kv mb2"><dt>Judul Skripsi Final</dt><dd>' + F.esc(k.judulFinal || '-') + '</dd></dl>' +
           (dokPenyerahan.length
             ? '<div class="mb2" data-dok-penyerahan><div class="tiny muted mb1">Formulir untuk ditandatangani perpustakaan:</div>' + S.Dok.daftar(dokPenyerahan, true) + '</div>' : '') +
           (t1 === 'REVISI' ? '<div class="notice danger mb2">' + ik('alert', 17) + '<span><b>Catatan BAAK:</b> ' + F.esc(k.tahap1Catatan || '-') + '</span></div>' : '') +
@@ -1797,7 +1840,8 @@
           (t2 === 'REVISI' ? '<div class="notice danger mb2">' + ik('alert', 17) + '<span><b>Catatan BAAK:</b> ' + F.esc(k.tahap2Catatan || '-') + '</span></div>' : '') +
           (bisa2 && !selesai
             ? M.kotakUnggahTahap(2)
-            : '<dl class="kv"><dt>Jurnal / Penerbit</dt><dd>' + F.esc(k.tahap2Jurnal || '-') + '</dd>' +
+            : '<dl class="kv">' + (k.tahap2JudulJurnal ? '<dt>Judul Jurnal</dt><dd>' + F.esc(k.tahap2JudulJurnal) + '</dd>' : '') +
+              '<dt>Jurnal / Penerbit</dt><dd>' + F.esc(k.tahap2Jurnal || '-') + '</dd>' +
               (k.tahap2Link ? '<dt>Tautan Publikasi</dt><dd><a href="' + F.esc(k.tahap2Link) + '" target="_blank" rel="noopener">' + F.esc(k.tahap2Link) + '</a></dd>' : '') +
               '</dl>') +
           '</div></div>' +
@@ -1855,8 +1899,9 @@
       var kirim = el.querySelector('#kl-kirim');
       if (!kirim) return;
       M.kunciKirim(el, kirim, function () {
-        var j = el.querySelector('#kl-jurnal');
+        var j = el.querySelector('#kl-jurnal'), jj = el.querySelector('#kl-judul-jurnal');
         return [ung[1] ? M.kurangUnggah(ung[1], 'Berkas Tahap 1') : '',
+          ung[2] && jj && !jj.value.trim() ? 'Judul jurnal' : '',
           ung[2] && j && !j.value.trim() ? 'Nama jurnal' : '',
           ung[2] ? M.kurangUnggah(ung[2], 'LOA / bukti publikasi') : ''];
       });
@@ -1869,10 +1914,12 @@
         }
         if (ung[2]) {
           var jurnal = el.querySelector('#kl-jurnal').value.trim();
+          var judulJurnal = el.querySelector('#kl-judul-jurnal').value.trim();
+          if (!judulJurnal) return UI.toast('Tahap 2: judul jurnal wajib diisi.', 'error');
           if (!jurnal) return UI.toast('Tahap 2: nama jurnal / lembaga penerbit wajib diisi.', 'error');
           if (ung[2].sedang) return UI.toast('Tunggu proses unggah Tahap 2 selesai.', 'warn');
           if (!ung[2].fileId) return UI.toast('Tahap 2: unggah LOA atau bukti publikasi.', 'error');
-          data.tahap2 = { jurnal: jurnal, link: el.querySelector('#kl-link').value.trim(), fileId: ung[2].fileId, fileUrl: ung[2].url };
+          data.tahap2 = { jurnal: jurnal, judulJurnal: judulJurnal, link: el.querySelector('#kl-link').value.trim(), fileId: ung[2].fileId, fileUrl: ung[2].url };
         }
         var btn = ev.currentTarget;
         UI.sibuk(btn, true, 'Mengirim…');
@@ -1891,7 +1938,9 @@
     kotakUnggahTahap: function (n) {
       var judul = n === 1 ? 'Unggah Bukti Penyerahan Skripsi &amp; Bebas Perpustakaan' : 'Unggah Letter of Acceptance (LOA) / Bukti Publikasi';
       return (n === 2
-        ? '<div class="grid-2"><div class="field"><label for="kl-jurnal">Nama Jurnal / Lembaga Penerbit <span class="req">*</span></label>' +
+        ? '<div class="field"><label for="kl-judul-jurnal">Judul Jurnal <span class="req">*</span></label>' +
+        '<textarea class="textarea" id="kl-judul-jurnal" maxlength="300" placeholder="Judul artikel yang terbit / diterima jurnal"></textarea></div>' +
+        '<div class="grid-2"><div class="field"><label for="kl-jurnal">Nama Jurnal / Lembaga Penerbit <span class="req">*</span></label>' +
         '<input class="input" id="kl-jurnal" maxlength="150" placeholder="Contoh: Jurnal Ekonomi & Perbankan Syariah (JEPS) — Sinta 3"></div>' +
         '<div class="field"><label for="kl-link">Tautan Publikasi / DOI <span class="muted">(opsional)</span></label>' +
         '<input class="input" id="kl-link" maxlength="300" placeholder="https://doi.org/..."></div></div>'
@@ -2085,6 +2134,13 @@
         if (x.kelompok) return x.kelompok;
         return /SEMPRO/.test(x.alur || '') ? 'SEMPRO' : (/SIDANG/.test(x.alur || '') ? 'SKRIPSI' : 'UMUM');
       }
+      // v3.5: mahasiswa lulus (SKL dikirim) — Formulir Siap Cetak tidak lagi tersedia
+      if (d.statusLulus && d.statusLulus.formulirTerkunci) {
+        document.getElementById('mhsview-formulir').innerHTML = '<div class="page-head"><div><h2>Formulir Siap Cetak</h2></div></div>' +
+          '<div class="card"><div class="card-body">' + UI.kosong('Tidak Lagi Tersedia',
+            'Anda telah dinyatakan lulus (SKL sudah diterbitkan). Gunakan menu Skripsi dan Administrasi Kelulusan.', 'award') + '</div></div>';
+        return;
+      }
       var isi = '<div class="notice mb2">' + ik('info', 17) + '<span>Formulir siap cetak dapat diunduh kapan saja tanpa menunggu pengajuan. ' +
         'Formulir Seminar Proposal terbuka mulai semester 6, formulir Skripsi mulai semester 7. ' +
         'Nama, NIM &amp; prodi terisi otomatis; isian tambahan tidak dikirim ke BAAK.</span></div>';
@@ -2263,8 +2319,9 @@
         pengujiNama: 'Penguji Sempro', pembimbing: 'Dosen Pembimbing', tanggalAcc: 'Tanggal ACC',
         penguji1: 'Penguji 1', penguji2: 'Penguji 2', penguji3: 'Penguji 3', ipk: 'IPK',
         catatanRevisi: 'Catatan Revisi', calonPembimbing: 'Calon Pembimbing',
-        khsUrl: 'Berkas KHS', skripsiUrl: 'Skripsi Final', lembarUrl: 'Lembar Revisi / Pengesahan',
-        buktiUrl: 'Bukti Berkas'
+        khsUrl: 'Berkas KRS', skripsiUrl: 'Skripsi Final', lembarUrl: 'Lembar Revisi / Pengesahan',
+        buktiUrl: 'Bukti Berkas', jenisPenelitian: 'Jenis Penelitian', transkripUrl: 'Transkrip Sementara',
+        judulJurnal: 'Judul Jurnal'
       };
       return p[k] || k.replace(/([A-Z])/g, ' $1').replace(/^./, function (c) { return c.toUpperCase(); });
     },

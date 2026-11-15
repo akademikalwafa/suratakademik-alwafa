@@ -9,7 +9,7 @@
 
   var CFG = global.APP_CONFIG;
   /** Versi frontend (dipakai untuk cache-busting modul yang dimuat belakangan). */
-  var VER = '3.4.0';
+  var VER = '3.5.0';
 
   /* ======================================================================
      1. API CLIENT — gas-instant-ux-pro

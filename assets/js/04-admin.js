@@ -154,6 +154,17 @@
       k = String(k || '').toUpperCase();
       return k === 'REGULER' ? 'Reguler' : k === 'HYBRID' ? 'Hybrid' : '';
     },
+    /**
+     * v3.5 (Revisi 7): tanggal isian mahasiswa ("2026-06-07" / ISO) ditampilkan "7 Juni 2026".
+     * Nilai lain dikembalikan apa adanya.
+     */
+    nilaiTampil: function (v) {
+      var s = String(v === null || v === undefined ? '' : v).trim();
+      var m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (m) return F.tgl(new Date(+m[1], +m[2] - 1, +m[3]));
+      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/.test(s)) return F.tgl(s);
+      return s;
+    },
     badgeKelas: function (k) {
       var l = A.labelKelas(k);
       if (!l) return '<span class="tiny muted">—</span>';
@@ -541,6 +552,11 @@
           ? '<div class="notice warn mb2">' + ik('alert', 17) + '<span><b>Aturan dokumen Revisi 5 belum diterapkan.</b> ' +
             'Jalankan fungsi <span class="mono">migrasiStruktur()</span> lalu <span class="mono">setupV33()</span> sekali dari editor Apps Script ' +
             '(lihat Panduan bagian D9).</span></div>' : '') +
+        // v3.5: kode backend sudah baru tetapi migrasiStruktur() belum dijalankan
+        (d.migrasiV35 === false
+          ? '<div class="notice warn mb2">' + ik('alert', 17) + '<span><b>Pembaruan Revisi 7 belum diterapkan.</b> ' +
+            'Jalankan fungsi <span class="mono">migrasiStruktur()</span> lalu <span class="mono">setupV35()</span> sekali dari editor Apps Script ' +
+            '(lihat Panduan bagian D11) — kolom Judul Jurnal &amp; Lembar Penilaian Kuantitatif ditambahkan tanpa mengubah data.</span></div>' : '') +
 
         '<div class="kpi-grid mb3 kpi-dash">' + kpi.map(function (x) {
           return '<div class="kpi ' + x[3] + (x[3] === 'k-navy' ? ' dark' : '') + (x[5] ? ' ' + x[5] : '') + '">' +
@@ -1141,7 +1157,7 @@
     /* --------------------------------------------- PANEL DETAIL ANTREAN */
 
     panelDetail: function (cfg, r) {
-      var POLA_KHUSUS = /^F_NILAI_SIDANG_|^F_NILAI_SEMPRO$|^SKL$|^SK_KELULUSAN$|^LEMBAR_PENGESAHAN$/;
+      var POLA_KHUSUS = /^F_NILAI_SIDANG_|^F_NILAI_SEMPRO(_KUANT)?$|^SKL$|^SK_KELULUSAN$|^LEMBAR_PENGESAHAN$/;
       var d = r.data || {};
       var master = A.D.master;
       var dosenNidn = (master.dosen || []).filter(function (x) { return String(x.kategori).toUpperCase() === 'NIDN' && x.statusAktif; });
@@ -1201,8 +1217,20 @@
           return d[k] !== '' && d[k] !== null && d[k] !== undefined && typeof d[k] !== 'object' && k !== 'setuju' && k !== kunciJudul &&
             !/Id$|Url$|^skKirim$/.test(k);   // v3.3: ID internal & tautan berkas (ada tombol Pratinjau) tidak diulang
         }).map(function (k) {
-          return '<dt>' + F.esc(S.Mahasiswa.labelField(k)) + '</dt><dd>' + F.esc(d[k]) + '</dd>';
+          return '<dt>' + F.esc(S.Mahasiswa.labelField(k)) + '</dt><dd>' + F.esc(A.nilaiTampil(d[k])) + '</dd>';
         }).join('') + '</dl>';
+      // v3.5: isian tambahan dari template (kolom dinamis) ikut tampil — tanggal ditulis "3 Januari 2026".
+      var dyn = (d._dinamis && typeof d._dinamis === 'object') ? d._dinamis : {};
+      var kunciDyn = Object.keys(dyn).filter(function (k) {
+        return dyn[k] !== '' && dyn[k] !== null && dyn[k] !== undefined && typeof dyn[k] !== 'object' && !/Id$|Url$/.test(k);
+      });
+      if (kunciDyn.length) {
+        var labelPh = {};
+        (master.peta || []).forEach(function (x) { if (x.label && !labelPh[x.placeholder]) labelPh[x.placeholder] = x.label; });
+        rincian += '<div class="tiny muted mb1">Isian tambahan</div><dl class="kv mb2">' + kunciDyn.map(function (k) {
+          return '<dt>' + F.esc(labelPh[k] || k.replace(/_/g, ' ')) + '</dt><dd>' + F.esc(A.nilaiTampil(dyn[k])) + '</dd>';
+        }).join('') + '</dl>';
+      }
 
       // Anggota kelompok magang
       var anggotaHtml = '';
@@ -1248,11 +1276,13 @@
 
       // Berkas unggahan umum
       var berkas = '';
-      ['khsUrl', 'skripsiUrl', 'buktiUrl', 'lembarUrl'].forEach(function (k) {
+      ['khsUrl', 'transkripUrl', 'skripsiUrl', 'buktiUrl', 'lembarUrl'].forEach(function (k) {
         if (d[k] && cfg.k !== 'KONFIRMASI_MAGANG') {
           var judulBerkas = {
-            khsUrl: 'Kartu Hasil Studi (KHS)', skripsiUrl: 'Skripsi Final', buktiUrl: 'Bukti Transfer / Berkas',
-            lembarUrl: r.jenis === 'REVISI_SIDANG' ? 'Lembar Revisi Skripsi' : 'Lembar Pengesahan'
+            khsUrl: 'Kartu Rencana Studi (KRS)', skripsiUrl: 'Skripsi Final', buktiUrl: 'Bukti Transfer / Berkas',
+            transkripUrl: 'Transkrip Nilai Sementara',
+            lembarUrl: r.jenis === 'REVISI_SIDANG' ? 'Lembar Revisi Skripsi'
+              : (r.jenis === 'REVISI_SEMPRO' ? 'Lembar Pernyataan Revisi Seminar Proposal' : 'Lembar Pengesahan')
           }[k];
           berkas += '<button class="btn btn-ghost btn-block mb1" data-berkas="' + F.esc(d[k]) +
             '" data-berkas-nama="' + F.esc(judulBerkas) + '">' +
@@ -1294,7 +1324,7 @@
             '<span class="grow truncate">' + F.esc(nama) + '</span><span class="badge badge-blue">Otomatis</span></div>' +
             '<div class="hint">Diambil dari ' + F.esc(sumber) + '.</div></div>';
         };
-        var POLA_LEMBAR = sidang ? /^F_NILAI_SIDANG_/ : /^F_NILAI_SEMPRO$/;
+        var POLA_LEMBAR = sidang ? /^F_NILAI_SIDANG_/ : /^F_NILAI_SEMPRO(_KUANT)?$/;
         var lembar = (r.dokumen || []).filter(function (x) { return POLA_LEMBAR.test(x.kode); });
         var lembarDibuat = (r.antrean || []).some(function (j) { return POLA_LEMBAR.test(j.kode) && j.status !== 'GAGAL'; });
         var defAdmSidang = (sidang && r.status === 'MENUNGGU') ? A.fieldAdmin('SIDANG', true) : [];
@@ -1304,6 +1334,10 @@
           '<div class="dp-blok" style="border:1px solid var(--line);border-radius:12px;padding:14px;margin:14px 0;background:var(--surface-2)">' +
           '<div class="between mb2"><h4 style="font-size:13.5px">' + (sidang ? 'PENETAPAN PENGUJI &amp; JADWAL SIDANG SKRIPSI' : 'PENETAPAN PENGUJI &amp; JADWAL SEMINAR PROPOSAL') + '</h4>' +
           '<span class="badge badge-orange">Wajib NIDN</span></div>' +
+          (d.jenisPenelitian
+            ? '<div class="notice mb2" style="font-size:12.5px">' + ik('book', 16) + '<span>Jenis penelitian: <b>' + F.esc(d.jenisPenelitian) + '</b>' +
+              (/^kuan/i.test(d.jenisPenelitian) ? ' — Lembar Penilaian Penguji memakai versi <b>Kuantitatif</b> bila templatenya sudah diisi.' : '.') + '</span></div>'
+            : '') +
           (sidang
             ? otomatis('Penguji 1', pg.penguji1 || auto.p1, 'penguji Seminar Proposal', 'penguji1Id') +
               otomatis('Penguji 2', pg.penguji2 || auto.p2, 'dosen pembimbing (Revisi Seminar Proposal)', 'penguji2Id') +
@@ -1556,9 +1590,9 @@
     },
 
     pasangAksiDetail: function (cfg, r, root) {
-      var dokUmum = (r.dokumen || []).filter(function (x) { return !/^F_NILAI_SIDANG_|^F_NILAI_SEMPRO$|^SKL$|^SK_KELULUSAN$|^LEMBAR_PENGESAHAN$/.test(x.kode); });
+      var dokUmum = (r.dokumen || []).filter(function (x) { return !/^F_NILAI_SIDANG_|^F_NILAI_SEMPRO(_KUANT)?$|^SKL$|^SK_KELULUSAN$|^LEMBAR_PENGESAHAN$/.test(x.kode); });
       S.Dok.pasang(root.querySelector('[data-dok-umum]'), dokUmum);
-      S.Dok.pasang(root.querySelector('[data-lembar]'), (r.dokumen || []).filter(function (x) { return /^F_NILAI_SIDANG_|^F_NILAI_SEMPRO$/.test(x.kode); }));
+      S.Dok.pasang(root.querySelector('[data-lembar]'), (r.dokumen || []).filter(function (x) { return /^F_NILAI_SIDANG_|^F_NILAI_SEMPRO(_KUANT)?$/.test(x.kode); }));
 
       // v3.3: pratinjau / cetak / kirim per dokumen (SK, Kartu, SKL, Lembar Pengesahan, SKK)
       var cariDok = function (kode) { return (r.dokumen || []).filter(function (x) { return x.kode === kode; })[0]; };
@@ -1975,6 +2009,7 @@
             '<div class="tahap-b">' +
             (url ? '<button class="btn btn-ghost btn-block mb1" data-kl-berkas="' + n + '">' +
               ik('eye', 15) + 'Pratinjau Berkas Unggahan Mahasiswa</button>' : '<div class="small muted mb1">Belum ada berkas diunggah.</div>') +
+            (n === 2 && k.tahap2JudulJurnal ? '<div class="small mb1"><b>Judul Jurnal:</b> ' + F.esc(k.tahap2JudulJurnal) + '</div>' : '') +
             (n === 2 && k.tahap2Link ? '<div class="small mb1">Tautan publikasi: <a href="' + F.esc(k.tahap2Link) + '" target="_blank" rel="noopener">' + F.esc(k.tahap2Link) + '</a></div>' : '') +
             (catatan ? '<div class="notice warn" style="font-size:12.5px">' + ik('alert', 16) + '<span>Catatan revisi: ' + F.esc(catatan) + '</span></div>' : '') +
             '</div></div>';
@@ -3204,7 +3239,9 @@
             '<td>' + (m.tanggalTutup ? F.tgl(m.tanggalTutup) : '<span class="muted">Tanpa batas</span>') + '</td>' +
             '<td class="small" style="max-width:240px">' + F.esc(m.alasanNonaktif || '-') + '</td>' +
             '<td class="right"><button class="btn btn-ghost btn-sm" data-akses="' + F.esc(m.kunciMenu) + '">' + ik('edit', 13) + ' Atur</button></td></tr>';
-        }).join('') + '</tbody></table></div></div>';
+        }).join('') + '</tbody></table></div></div>' +
+        A.htmlAksesLulus(menus);
+      A.pasangAksesLulus(el);
 
       Array.prototype.forEach.call(el.querySelectorAll('[data-akses]'), function (b) {
         b.onclick = function () {
@@ -3252,6 +3289,60 @@
           });
         };
       });
+    },
+
+    /**
+     * v3.5 (Revisi 7): Akses Mahasiswa Lulus — mahasiswa yang SKL-nya sudah dikirim hanya dapat
+     * membuka menu yang dicentang (default: Skripsi & Administrasi Kelulusan). Riwayat selalu terbuka.
+     */
+    MENU_LULUS: [
+      ['surat_aktif', 'Surat Keterangan Aktif'], ['magang', 'Pengajuan Magang'], ['konfirmasi_magang', 'Konfirmasi Magang'],
+      ['penelitian', 'Surat Izin Penelitian'], ['sempro', 'Proposal (Seminar Proposal)'], ['sidang', 'Skripsi (Sidang Skripsi)'],
+      ['kelulusan', 'Administrasi Kelulusan'], ['perbaikan_nilai', 'Perbaikan Nilai'], ['formulir', 'Formulir Siap Cetak']
+    ],
+    htmlAksesLulus: function (menus) {
+      var a = A.D.aksesLulus;
+      var didukung = !!a;
+      a = a || { aktif: true, terbuka: ['sidang', 'kelulusan'] };
+      var nama = {};
+      (menus || []).forEach(function (m) { nama[m.kunciMenu] = m.namaMenu; });
+      return '<div class="card mt3" id="akses-lulus"><div class="card-head"><div><h3>Akses Mahasiswa Lulus</h3>' +
+        '<div class="sub">Mahasiswa dianggap <b>lulus</b> setelah SKL dikirim ke akun mahasiswa. Menu yang tidak dicentang tertutup otomatis ' +
+        'bagi mahasiswa tersebut; menu Riwayat &amp; dokumen yang sudah terbit tetap dapat dibuka.</div></div></div>' +
+        '<div class="card-body">' +
+        (didukung ? '' : '<div class="notice warn mb2" style="font-size:12.5px">' + ik('alert', 16) +
+          '<span>Backend belum versi 3.5 — perbarui kode Apps Script agar pengaturan ini berlaku.</span></div>') +
+        '<label class="check mb2" style="background:var(--surface-2);padding:12px;border-radius:10px">' +
+        '<input type="checkbox" id="al-aktif"' + (a.aktif ? ' checked' : '') + (didukung ? '' : ' disabled') + '>' +
+        '<span><b>Batasi akses mahasiswa lulus</b> — bila dimatikan, mahasiswa lulus tetap memakai aturan menu biasa.</span></label>' +
+        '<div class="tiny muted mb1">Menu yang tetap dapat diakses mahasiswa lulus:</div>' +
+        '<div class="checkgrid mb2" id="al-menu" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px">' + A.MENU_LULUS.map(function (x) {
+          var on = (a.terbuka || []).indexOf(x[0]) >= 0;
+          return '<label class="checkrow"><input type="checkbox" data-al="' + x[0] + '"' + (on ? ' checked' : '') + (didukung ? '' : ' disabled') + '>' +
+            '<div class="grow"><div class="bold">' + F.esc(nama[x[0]] || x[1]) + '</div>' +
+            '<div class="tiny muted mono">' + x[0] + '</div></div></label>';
+        }).join('') + '</div>' +
+        (didukung ? '<button class="btn btn-primary" id="al-simpan">' + ik('check', 15) + 'Simpan Akses Mahasiswa Lulus</button>' : '') +
+        '</div></div>';
+    },
+    pasangAksesLulus: function (el) {
+      var btn = el.querySelector('#al-simpan');
+      if (!btn) return;
+      btn.onclick = function () {
+        var terbuka = [];
+        Array.prototype.forEach.call(el.querySelectorAll('[data-al]'), function (c) { if (c.checked) terbuka.push(c.getAttribute('data-al')); });
+        var aktif = el.querySelector('#al-aktif').checked;
+        UI.sibuk(btn, true, 'Menyimpan…');
+        API.kirim('simpanAppConfig', { items: [
+          { key: 'AKSES_LULUS_AKTIF', value: aktif ? 'YA' : 'TIDAK' },
+          { key: 'AKSES_LULUS_MENU', value: terbuka.join(',') }
+        ] }).then(function (r) {
+          UI.sibuk(btn, false);
+          if (!r.success) return UI.toast(r.message, 'error');
+          UI.toast('Akses mahasiswa lulus disimpan.', 'ok');
+          A.muat();
+        });
+      };
     },
 
     /* ==================================================================
